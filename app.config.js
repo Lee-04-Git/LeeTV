@@ -13,9 +13,11 @@ export default {
       backgroundColor: "#ffffff",
     },
     ios: {
+      bundleIdentifier: "com.leetv.app",
       supportsTablet: true,
     },
     android: {
+      package: "com.leetv.app",
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#ffffff",
