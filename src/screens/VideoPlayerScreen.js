@@ -4,18 +4,21 @@ import {
   StyleSheet,
   TouchableOpacity,
   Text,
-  Dimensions,
   ActivityIndicator,
   StatusBar,
   Platform,
   TouchableWithoutFeedback,
   BackHandler,
 } from "react-native";
-import { WebView } from "react-native-webview";
 import Video from "react-native-video";
+import { scrapeVideoUrl } from "../services/videoScraper";
 import colors from "../constants/colors";
 
-const { width, height } = Dimensions.get("window");
+// Conditionally import WebView only for mobile
+let WebView = null;
+if (Platform.OS !== 'web') {
+  WebView = require('react-native-webview').WebView;
+}
 
 const VideoPlayerScreen = ({ navigation, route }) => {
   const params = route.params || {};
@@ -28,7 +31,8 @@ const VideoPlayerScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showControls, setShowControls] = useState(true);
-  const [extractedVideoUrl, setExtractedVideoUrl] = useState(null);
+  const [scrapedVideoUrl, setScrapedVideoUrl] = useState(null);
+  const [provider, setProvider] = useState(null);
   const [useNativePlayer, setUseNativePlayer] = useState(false);
   const webViewRef = useRef(null);
   const videoRef = useRef(null);
@@ -36,6 +40,9 @@ const VideoPlayerScreen = ({ navigation, route }) => {
 
   useEffect(() => {
     console.log("VideoPlayer params:", { title, mediaId, mediaType, season, episode });
+    
+    // Start scraping video URL immediately
+    scrapeVideo();
     
     // Handle Android back button
     const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -46,42 +53,32 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     return () => backHandler.remove();
   }, []);
 
-  // Handle messages from WebView
-  const handleWebViewMessage = (event) => {
+  // Scrape video URL from providers
+  const scrapeVideo = async () => {
+    setLoading(true);
+    setError(null);
+    
     try {
-      const data = JSON.parse(event.nativeEvent.data);
-      console.log("WebView message:", data);
+      console.log('🔍 Scraping video URL...');
+      const result = await scrapeVideoUrl(mediaId, mediaType, season, episode);
       
-      if (data.type === "VIDEO_URL") {
-        console.log("Extracted video URL:", data.url);
-        setExtractedVideoUrl(data.url);
+      if (result && result.url) {
+        console.log('✅ Scraped successfully from:', result.provider);
+        setScrapedVideoUrl(result.url);
+        setProvider(result.provider);
         setUseNativePlayer(true);
         setLoading(false);
-      } else if (data.type === "AD_BLOCKED") {
-        console.log("Ad blocked:", data.url);
-      } else if (data.type === "CONSOLE") {
-        console.log("WebView console:", data.message);
+      } else {
+        console.log('⚠️ Scraping failed, falling back to embed');
+        setUseNativePlayer(false);
+        setLoading(false);
       }
-    } catch (e) {
-      console.log("Message parse error:", e);
+    } catch (err) {
+      console.error('❌ Scraping error:', err);
+      setUseNativePlayer(false);
+      setLoading(false);
     }
   };
-
-  // Build embed URL - using vidrock.net
-  const getVideoUrl = () => {
-    if (!mediaId) return null;
-    const id = String(mediaId);
-    if (mediaType === "tv") {
-      return `https://vidrock.net/tv/${id}/${season}/${episode}`;
-    }
-    return `https://vidrock.net/movie/${id}`;
-  };
-
-  const videoUrl = getVideoUrl();
-
-  useEffect(() => {
-    if (videoUrl) console.log("Video URL:", videoUrl);
-  }, [videoUrl]);
 
   // Auto-hide controls
   useEffect(() => {
@@ -100,7 +97,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
 
   const toggleControls = () => setShowControls(!showControls);
 
-  if (!videoUrl || !mediaId) {
+  if (!mediaId) {
     return (
       <View style={styles.container}>
         <View style={styles.errorContainer}>
@@ -113,180 +110,8 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     );
   }
 
-  // HTML for WebView embed player with aggressive extraction
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-      <meta name="referrer" content="no-referrer">
-      <style>
-        *{margin:0;padding:0;box-sizing:border-box}
-        html,body{width:100%;height:100%;background-color:#000;overflow:hidden}
-        #container{width:100%;height:100%;position:relative}
-        /* Hide ad containers */
-        [id*="ad-"], [class*="ad-"], [id*="ads"], [class*="ads"],
-        [id*="banner"], [class*="banner"], [id*="popup"], [class*="popup"] {
-          display: none !important;
-        }
-      </style>
-    </head>
-    <body>
-      <div id="container"></div>
-      
-      <script>
-        (function() {
-          // Block popups
-          window.open = function() { return null; };
-          window.alert = function() {};
-          window.confirm = function() { return false; };
-          
-          let extractedUrl = null;
-          let foundVideo = false;
-          
-          // Intercept ALL network requests before they happen
-          const originalXHROpen = XMLHttpRequest.prototype.open;
-          const originalXHRSend = XMLHttpRequest.prototype.send;
-          
-          XMLHttpRequest.prototype.open = function(method, url) {
-            this._url = url;
-            return originalXHROpen.apply(this, arguments);
-          };
-          
-          XMLHttpRequest.prototype.send = function() {
-            const url = this._url;
-            if (url && (url.includes('.m3u8') || url.includes('.mp4') || url.includes('playlist') || url.includes('master'))) {
-              if (!foundVideo) {
-                foundVideo = true;
-                console.log('🎥 XHR Video found:', url);
-                window.ReactNativeWebView?.postMessage(JSON.stringify({
-                  type: 'VIDEO_URL',
-                  url: url,
-                  method: 'XHR'
-                }));
-              }
-            }
-            return originalXHRSend.apply(this, arguments);
-          };
-          
-          // Intercept Fetch
-          const originalFetch = window.fetch;
-          window.fetch = function(url, options) {
-            const urlString = typeof url === 'string' ? url : url?.url || url?.href || String(url);
-            
-            if (urlString && (urlString.includes('.m3u8') || urlString.includes('.mp4') || urlString.includes('playlist') || urlString.includes('master'))) {
-              if (!foundVideo) {
-                foundVideo = true;
-                console.log('🎥 Fetch Video found:', urlString);
-                window.ReactNativeWebView?.postMessage(JSON.stringify({
-                  type: 'VIDEO_URL',
-                  url: urlString,
-                  method: 'Fetch'
-                }));
-              }
-            }
-            
-            return originalFetch.apply(this, arguments);
-          };
-          
-          // Monitor for video/source elements
-          const checkForVideo = () => {
-            const videos = document.querySelectorAll('video');
-            videos.forEach(video => {
-              if (video.src && !foundVideo) {
-                foundVideo = true;
-                console.log('🎥 Video element src:', video.src);
-                window.ReactNativeWebView?.postMessage(JSON.stringify({
-                  type: 'VIDEO_URL',
-                  url: video.src,
-                  method: 'VideoElement'
-                }));
-              }
-              
-              const sources = video.querySelectorAll('source');
-              sources.forEach(source => {
-                if (source.src && !foundVideo) {
-                  foundVideo = true;
-                  console.log('🎥 Source element:', source.src);
-                  window.ReactNativeWebView?.postMessage(JSON.stringify({
-                    type: 'VIDEO_URL',
-                    url: source.src,
-                    method: 'SourceElement'
-                  }));
-                }
-              });
-            });
-          };
-          
-          // Watch for new elements
-          const observer = new MutationObserver(checkForVideo);
-          observer.observe(document.documentElement, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['src']
-          });
-          
-          // Periodic checks
-          setInterval(checkForVideo, 500);
-          setTimeout(checkForVideo, 1000);
-          setTimeout(checkForVideo, 2000);
-          setTimeout(checkForVideo, 3000);
-          
-          // Load the embed page
-          const container = document.getElementById('container');
-          const iframe = document.createElement('iframe');
-          iframe.src = '${videoUrl}';
-          iframe.style.width = '100%';
-          iframe.style.height = '100%';
-          iframe.style.border = 'none';
-          iframe.allowFullscreen = true;
-          iframe.allow = 'autoplay; fullscreen; encrypted-media';
-          container.appendChild(iframe);
-          
-          console.log('🚀 Video extraction initialized');
-        })();
-      </script>
-    </body>
-    </html>
-  `;
-
-  // Web platform - use iframe
-  if (Platform.OS === "web") {
-    return (
-      <View style={styles.container}>
-        <StatusBar hidden />
-        <View style={styles.header}>
-          <TouchableOpacity onPress={handleBack} style={styles.headerButton}>
-            <Text style={styles.headerButtonText}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {title}{mediaType === "tv" ? ` S${season}E${episode}` : ""}
-          </Text>
-          <View style={styles.headerButton} />
-        </View>
-        <View style={styles.videoContainer}>
-          {loading && (
-            <View style={styles.loadingOverlay}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>Loading video...</Text>
-            </View>
-          )}
-          <iframe
-            src={videoUrl}
-            style={{ width: "100%", height: "100%", border: "none", backgroundColor: "#000" }}
-            allowFullScreen
-            allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-            referrerPolicy="no-referrer"
-            onLoad={() => setLoading(false)}
-          />
-        </View>
-      </View>
-    );
-  }
-
-  // If we have extracted video URL, use native player (react-native-video with ExoPlayer)
-  if (useNativePlayer && extractedVideoUrl) {
+  // If scraping succeeded, use native video player (100% ad-free!)
+  if (useNativePlayer && scrapedVideoUrl) {
     return (
       <View style={styles.container}>
         <StatusBar hidden />
@@ -295,7 +120,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
           <View style={styles.videoWrapper}>
             <Video
               ref={videoRef}
-              source={{ uri: extractedVideoUrl }}
+              source={{ uri: scrapedVideoUrl }}
               style={styles.video}
               controls={true}
               resizeMode="contain"
@@ -303,17 +128,17 @@ const VideoPlayerScreen = ({ navigation, route }) => {
               paused={false}
               onLoad={() => {
                 setLoading(false);
-                console.log("ExoPlayer loaded successfully");
+                console.log("✅ Video loaded successfully - AD FREE!");
               }}
               onError={(error) => {
-                console.error("ExoPlayer error:", error);
-                setError(error);
-                setUseNativePlayer(false); // Fallback to WebView
+                console.error("❌ Video playback error:", error);
+                setError("Video playback failed");
+                // Fallback to embed on error
+                setUseNativePlayer(false);
+                setLoading(false);
               }}
               onBuffer={({ isBuffering }) => {
-                if (isBuffering) {
-                  console.log("Buffering...");
-                }
+                console.log(isBuffering ? "Buffering..." : "Playing");
               }}
               fullscreen={true}
               fullscreenAutorotate={true}
@@ -326,7 +151,8 @@ const VideoPlayerScreen = ({ navigation, route }) => {
             {loading && (
               <View style={styles.loadingOverlay}>
                 <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={styles.loadingText}>Loading ExoPlayer...</Text>
+                <Text style={styles.loadingText}>Loading video...</Text>
+                <Text style={styles.loadingSubtext}>Scraped from {provider}</Text>
               </View>
             )}
 
@@ -346,8 +172,8 @@ const VideoPlayerScreen = ({ navigation, route }) => {
                       </Text>
                     )}
                   </View>
-                  <View style={styles.nativePlayerBadge}>
-                    <Text style={styles.badgeText}>ExoPlayer</Text>
+                  <View style={styles.adFreeBadge}>
+                    <Text style={styles.badgeText}>AD-FREE ✓</Text>
                   </View>
                 </View>
               </View>
@@ -358,7 +184,81 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     );
   }
 
-  // Native platform (iOS/Android) - use WebView with extraction attempts
+  // Fallback: Use embed with ad-blocking if scraping failed (mobile only)
+  if (Platform.OS === 'web') {
+    // Web platform - just show message
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Video player only works on mobile app</Text>
+          <Text style={styles.loadingSubtext}>Please use Android/iOS app</Text>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <Text style={styles.backButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  const videoUrl = mediaType === 'tv' 
+    ? `https://vidsrc.to/embed/tv/${mediaId}/${season}/${episode}`
+    : `https://vidsrc.to/embed/movie/${mediaId}`;
+
+  // HTML for WebView with aggressive ad blocking (fallback only)
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+      <style>
+        * {
+          margin: 0;
+          padding: 0;
+          box-sizing: border-box;
+        }
+        html, body {
+          width: 100%;
+          height: 100%;
+          background-color: #000;
+          overflow: hidden;
+        }
+        iframe {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          border: none;
+        }
+        /* Hide ads */
+        [id*="ad"], [class*="ad"],
+        [id*="banner"], [class*="banner"],
+        [id*="popup"], [class*="popup"] {
+          display: none !important;
+        }
+      </style>
+    </head>
+    <body>
+      <iframe 
+        src="${videoUrl}"
+        allowfullscreen
+        allow="autoplay; fullscreen; encrypted-media"
+        referrerpolicy="origin"
+      ></iframe>
+      
+      <script>
+        window.open = function() { return null; };
+        window.alert = function() {};
+        
+        setInterval(() => {
+          document.querySelectorAll('[id*="ad"], [class*="ad"]').forEach(el => el.remove());
+        }, 1000);
+      </script>
+    </body>
+    </html>
+  `;
+
+  // Fallback WebView player
   return (
     <View style={styles.container}>
       <StatusBar hidden />
@@ -368,10 +268,8 @@ const VideoPlayerScreen = ({ navigation, route }) => {
           {loading && (
             <View style={styles.loadingOverlay}>
               <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.loadingText}>
-                Loading video...{'\n'}
-                <Text style={styles.loadingSubtext}>Attempting to extract stream</Text>
-              </Text>
+              <Text style={styles.loadingText}>Loading video...</Text>
+              <Text style={styles.loadingSubtext}>(Using embed fallback)</Text>
             </View>
           )}
 
@@ -385,64 +283,29 @@ const VideoPlayerScreen = ({ navigation, route }) => {
             javaScriptEnabled={true}
             domStorageEnabled={true}
             onLoadStart={() => setLoading(true)}
-            onLoadEnd={() => {
-              setLoading(false);
-              console.log("WebView loaded");
-            }}
-            onMessage={handleWebViewMessage}
-            onError={(e) => {
-              console.log("WebView error:", e.nativeEvent);
-              setError(e.nativeEvent.description);
-            }}
-            onHttpError={(e) => console.log("HTTP error:", e.nativeEvent)}
+            onLoadEnd={() => setLoading(false)}
+            onError={(e) => setError(e.nativeEvent.description)}
             mixedContentMode="always"
-            allowUniversalAccessFromFileURLs={true}
             originWhitelist={["*"]}
-            userAgent="Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-            thirdPartyCookiesEnabled={true}
-            sharedCookiesEnabled={true}
             setSupportMultipleWindows={false}
             javaScriptCanOpenWindowsAutomatically={false}
-            cacheEnabled={true}
-            incognito={false}
-            injectedJavaScript={`
-              // Additional injection after page load
-              setTimeout(() => {
-                console.log('Injected script running...');
-                const videos = document.querySelectorAll('video');
-                console.log('Found ' + videos.length + ' video elements');
-                videos.forEach((v, i) => {
-                  console.log('Video ' + i + ' src:', v.src || 'no src');
-                });
-              }, 3000);
-              true;
-            `}
             onShouldStartLoadWithRequest={(request) => {
               const url = request.url.toLowerCase();
+              const adPatterns = [
+                'doubleclick', 'googlesyndication', 'ads.', '/ads/',
+                'popads', 'adnxs', 'advertising', 'taboola', 'outbrain'
+              ];
               
-              // Block ad URLs
-              if (
-                url.includes("doubleclick") ||
-                url.includes("googlesyndication") ||
-                url.includes("adservice") ||
-                url.includes("ads.") ||
-                url.includes("/ads/") ||
-                url.includes("popads") ||
-                url.includes("popunder") ||
-                url.includes("adnxs") ||
-                url.includes("advertising") ||
-                url.includes("taboola") ||
-                url.includes("outbrain")
-              ) {
-                console.log("Blocked ad URL:", url);
-                return false;
+              for (const pattern of adPatterns) {
+                if (url.includes(pattern)) {
+                  console.log("🚫 Blocked ad:", url);
+                  return false;
+                }
               }
-              
               return true;
             }}
           />
 
-          {/* Back Button Overlay */}
           {showControls && (
             <View style={styles.controlsOverlay}>
               <View style={styles.topBar}>
@@ -459,6 +322,12 @@ const VideoPlayerScreen = ({ navigation, route }) => {
                     </Text>
                   )}
                 </View>
+                <TouchableOpacity 
+                  onPress={scrapeVideo}
+                  style={styles.retryBadge}
+                >
+                  <Text style={styles.badgeText}>Retry Scrape</Text>
+                </TouchableOpacity>
               </View>
             </View>
           )}
@@ -468,8 +337,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
               <Text style={styles.errorText}>Failed to load video</Text>
               <TouchableOpacity style={styles.retryButton} onPress={() => {
                 setError(null);
-                setLoading(true);
-                webViewRef.current?.reload();
+                scrapeVideo();
               }}>
                 <Text style={styles.retryText}>Retry</Text>
               </TouchableOpacity>
@@ -483,33 +351,6 @@ const VideoPlayerScreen = ({ navigation, route }) => {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    backgroundColor: "rgba(0,0,0,0.9)",
-  },
-  headerButton: {
-    width: 70,
-  },
-  headerButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  headerTitle: {
-    flex: 1,
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-    textAlign: "center",
-  },
-  videoContainer: {
     flex: 1,
     backgroundColor: "#000",
   },
@@ -541,6 +382,7 @@ const styles = StyleSheet.create({
   loadingSubtext: {
     fontSize: 13,
     color: "rgba(255,255,255,0.7)",
+    marginTop: 5,
   },
   controlsOverlay: {
     position: "absolute",
@@ -583,10 +425,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 2,
   },
-  nativePlayerBadge: {
+  adFreeBadge: {
     backgroundColor: "#00D100",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+    marginLeft: 10,
+  },
+  retryBadge: {
+    backgroundColor: "#FF6B00",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 4,
     marginLeft: 10,
   },
