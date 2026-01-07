@@ -91,7 +91,7 @@ const FranchiseScreen = ({ navigation, route }) => {
                 style={styles.card}
                 onPress={() => handleContentPress(item)}
               >
-                <Image source={{ uri: item.image }} style={styles.poster} />
+                <Image source={{ uri: item.image }} style={styles.poster} resizeMode="cover" />
                 <View style={styles.cardInfo}>
                   <Text style={styles.cardTitle} numberOfLines={2}>
                     {item.title}
@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
   },
   poster: {
     width: "100%",
-    height: 170,
+    aspectRatio: 2 / 3,
     borderRadius: 8,
     backgroundColor: "rgba(255, 255, 255, 0.05)",
   },

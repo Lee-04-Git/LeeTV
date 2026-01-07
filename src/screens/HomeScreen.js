@@ -467,7 +467,7 @@ const HomeScreen = ({ navigation }) => {
                       }
                     >
                       <Image
-                        source={require("../../assets/disney+.jpg")}
+                        source={require("../../assets/disneyplus.jpg")}
                         style={styles.brandImage}
                         resizeMode="contain"
                       />
@@ -756,8 +756,8 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   brandCard: {
-    width: 180,
-    height: 100,
+    width: 200,
+    height: 110,
     marginRight: 16,
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     borderRadius: 12,
@@ -776,8 +776,8 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   brandImage: {
-    width: "90%",
-    height: "90%",
+    width: "100%",
+    height: "100%",
   },
   brandPlaceholder: {
     color: colors.white,
@@ -807,8 +807,8 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   showImage: {
-    width: 120,
-    height: 170,
+    width: 110,
+    height: 150,
     borderRadius: 6,
   },
   showOverlay: {

@@ -514,7 +514,7 @@ const styles = StyleSheet.create({
   },
   bannerContainer: {
     width: width,
-    height: width * 0.75,
+    height: width * 0.6,
     position: "relative",
   },
   bannerImage: {
@@ -813,8 +813,8 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   relatedImage: {
-    width: 120,
-    height: 170,
+    width: 110,
+    height: 150,
     borderRadius: 6,
   },
   relatedOverlay: {
