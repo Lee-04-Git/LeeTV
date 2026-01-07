@@ -12,7 +12,7 @@ import {
   BackHandler,
 } from "react-native";
 import { WebView } from "react-native-webview";
-import { Video, ResizeMode } from "expo-av";
+import Video from "react-native-video";
 import colors from "../constants/colors";
 
 const { width, height } = Dimensions.get("window");
@@ -113,7 +113,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     );
   }
 
-  // HTML for WebView embed player - optimized for mobile, blocks ads
+  // HTML for WebView embed player with aggressive extraction
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -123,206 +123,128 @@ const VideoPlayerScreen = ({ navigation, route }) => {
       <style>
         *{margin:0;padding:0;box-sizing:border-box}
         html,body{width:100%;height:100%;background-color:#000;overflow:hidden}
-        iframe{width:100%;height:100%;border:none;position:absolute;top:0;left:0}
-        .block-overlay{display:none}
+        #container{width:100%;height:100%;position:relative}
         /* Hide ad containers */
         [id*="ad-"], [class*="ad-"], [id*="ads"], [class*="ads"],
         [id*="banner"], [class*="banner"], [id*="popup"], [class*="popup"] {
           display: none !important;
-          visibility: hidden !important;
-          opacity: 0 !important;
-          position: absolute !important;
-          left: -9999px !important;
         }
       </style>
     </head>
     <body>
-      <iframe 
-        id="videoFrame"
-        src="${videoUrl}" 
-        allowfullscreen="true"
-        webkitallowfullscreen="true"
-        mozallowfullscreen="true"
-        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-        frameborder="0"
-        scrolling="no"
-      ></iframe>
+      <div id="container"></div>
       
       <script>
         (function() {
-          // Aggressive ad blocking and video extraction
-          
-          // Block popups and alerts
+          // Block popups
           window.open = function() { return null; };
           window.alert = function() {};
           window.confirm = function() { return false; };
-          window.prompt = function() { return null; };
           
-          // Intercept and log all console messages
-          const originalLog = console.log;
-          console.log = function(...args) {
-            window.ReactNativeWebView?.postMessage(JSON.stringify({
-              type: 'CONSOLE',
-              message: args.join(' ')
-            }));
-            originalLog.apply(console, args);
-          };
+          let extractedUrl = null;
+          let foundVideo = false;
           
-          // Intercept XHR requests
+          // Intercept ALL network requests before they happen
           const originalXHROpen = XMLHttpRequest.prototype.open;
+          const originalXHRSend = XMLHttpRequest.prototype.send;
+          
           XMLHttpRequest.prototype.open = function(method, url) {
-            if (url.includes('.m3u8') || url.includes('.mp4') || url.includes('.ts')) {
-              console.log('XHR Video URL found:', url);
-              window.ReactNativeWebView?.postMessage(JSON.stringify({
-                type: 'VIDEO_URL',
-                url: url,
-                method: 'XHR'
-              }));
-            }
-            // Block ad requests
-            if (url.includes('doubleclick') || url.includes('googlesyndication') || 
-                url.includes('adservice') || url.includes('/ads/') || url.includes('popads')) {
-              window.ReactNativeWebView?.postMessage(JSON.stringify({
-                type: 'AD_BLOCKED',
-                url: url
-              }));
-              return;
-            }
+            this._url = url;
             return originalXHROpen.apply(this, arguments);
           };
           
-          // Intercept Fetch API
+          XMLHttpRequest.prototype.send = function() {
+            const url = this._url;
+            if (url && (url.includes('.m3u8') || url.includes('.mp4') || url.includes('playlist') || url.includes('master'))) {
+              if (!foundVideo) {
+                foundVideo = true;
+                console.log('🎥 XHR Video found:', url);
+                window.ReactNativeWebView?.postMessage(JSON.stringify({
+                  type: 'VIDEO_URL',
+                  url: url,
+                  method: 'XHR'
+                }));
+              }
+            }
+            return originalXHRSend.apply(this, arguments);
+          };
+          
+          // Intercept Fetch
           const originalFetch = window.fetch;
           window.fetch = function(url, options) {
-            const urlString = typeof url === 'string' ? url : url.url;
+            const urlString = typeof url === 'string' ? url : url?.url || url?.href || String(url);
             
-            if (urlString.includes('.m3u8') || urlString.includes('.mp4') || urlString.includes('.ts')) {
-              console.log('Fetch Video URL found:', urlString);
-              window.ReactNativeWebView?.postMessage(JSON.stringify({
-                type: 'VIDEO_URL',
-                url: urlString,
-                method: 'Fetch'
-              }));
-            }
-            
-            // Block ad requests
-            if (urlString.includes('doubleclick') || urlString.includes('googlesyndication') || 
-                urlString.includes('adservice') || urlString.includes('/ads/') || urlString.includes('popads')) {
-              window.ReactNativeWebView?.postMessage(JSON.stringify({
-                type: 'AD_BLOCKED',
-                url: urlString
-              }));
-              return Promise.reject('Ad blocked');
+            if (urlString && (urlString.includes('.m3u8') || urlString.includes('.mp4') || urlString.includes('playlist') || urlString.includes('master'))) {
+              if (!foundVideo) {
+                foundVideo = true;
+                console.log('🎥 Fetch Video found:', urlString);
+                window.ReactNativeWebView?.postMessage(JSON.stringify({
+                  type: 'VIDEO_URL',
+                  url: urlString,
+                  method: 'Fetch'
+                }));
+              }
             }
             
             return originalFetch.apply(this, arguments);
           };
           
-          // Override createElement to block ad scripts
-          const originalCreateElement = document.createElement;
-          document.createElement = function(tagName) {
-            const element = originalCreateElement.call(document, tagName);
-            
-            if (tagName.toLowerCase() === 'script' || tagName.toLowerCase() === 'iframe') {
-              const originalSetAttribute = element.setAttribute;
-              element.setAttribute = function(name, value) {
-                if (name === 'src' && typeof value === 'string') {
-                  if (value.includes('doubleclick') || value.includes('googlesyndication') || 
-                      value.includes('adservice') || value.includes('/ads/') || value.includes('popads')) {
-                    window.ReactNativeWebView?.postMessage(JSON.stringify({
-                      type: 'AD_BLOCKED',
-                      url: value
-                    }));
-                    return;
-                  }
-                }
-                return originalSetAttribute.apply(this, arguments);
-              };
-            }
-            
-            return element;
-          };
-          
-          // Monitor DOM for video elements
-          const observer = new MutationObserver(function(mutations) {
-            mutations.forEach(function(mutation) {
-              mutation.addedNodes.forEach(function(node) {
-                if (node.tagName === 'VIDEO') {
-                  console.log('Video element detected');
-                  
-                  // Try to get video source
-                  const checkSrc = () => {
-                    if (node.src && (node.src.includes('.m3u8') || node.src.includes('.mp4'))) {
-                      console.log('Video src found:', node.src);
-                      window.ReactNativeWebView?.postMessage(JSON.stringify({
-                        type: 'VIDEO_URL',
-                        url: node.src,
-                        method: 'VideoElement'
-                      }));
-                    }
-                    
-                    // Check source children
-                    const sources = node.querySelectorAll('source');
-                    sources.forEach(source => {
-                      if (source.src && (source.src.includes('.m3u8') || source.src.includes('.mp4'))) {
-                        console.log('Source element found:', source.src);
-                        window.ReactNativeWebView?.postMessage(JSON.stringify({
-                          type: 'VIDEO_URL',
-                          url: source.src,
-                          method: 'SourceElement'
-                        }));
-                      }
-                    });
-                  };
-                  
-                  checkSrc();
-                  node.addEventListener('loadedmetadata', checkSrc);
-                  node.addEventListener('canplay', checkSrc);
-                }
-                
-                // Block ad elements
-                if (node.id && (node.id.includes('ad') || node.id.includes('banner') || node.id.includes('popup'))) {
-                  node.style.display = 'none';
-                  node.remove();
-                }
-                if (node.className && typeof node.className === 'string') {
-                  if (node.className.includes('ad') || node.className.includes('banner') || node.className.includes('popup')) {
-                    node.style.display = 'none';
-                    node.remove();
-                  }
+          // Monitor for video/source elements
+          const checkForVideo = () => {
+            const videos = document.querySelectorAll('video');
+            videos.forEach(video => {
+              if (video.src && !foundVideo) {
+                foundVideo = true;
+                console.log('🎥 Video element src:', video.src);
+                window.ReactNativeWebView?.postMessage(JSON.stringify({
+                  type: 'VIDEO_URL',
+                  url: video.src,
+                  method: 'VideoElement'
+                }));
+              }
+              
+              const sources = video.querySelectorAll('source');
+              sources.forEach(source => {
+                if (source.src && !foundVideo) {
+                  foundVideo = true;
+                  console.log('🎥 Source element:', source.src);
+                  window.ReactNativeWebView?.postMessage(JSON.stringify({
+                    type: 'VIDEO_URL',
+                    url: source.src,
+                    method: 'SourceElement'
+                  }));
                 }
               });
             });
-          });
+          };
           
-          observer.observe(document.body || document.documentElement, {
+          // Watch for new elements
+          const observer = new MutationObserver(checkForVideo);
+          observer.observe(document.documentElement, {
             childList: true,
-            subtree: true
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['src']
           });
           
-          // Also check iframe content if accessible
-          setTimeout(() => {
-            try {
-              const iframe = document.getElementById('videoFrame');
-              if (iframe && iframe.contentDocument) {
-                const iframeVideos = iframe.contentDocument.querySelectorAll('video');
-                iframeVideos.forEach(video => {
-                  if (video.src) {
-                    console.log('Iframe video found:', video.src);
-                    window.ReactNativeWebView?.postMessage(JSON.stringify({
-                      type: 'VIDEO_URL',
-                      url: video.src,
-                      method: 'IframeVideo'
-                    }));
-                  }
-                });
-              }
-            } catch (e) {
-              console.log('Cannot access iframe content (CORS):', e.message);
-            }
-          }, 2000);
+          // Periodic checks
+          setInterval(checkForVideo, 500);
+          setTimeout(checkForVideo, 1000);
+          setTimeout(checkForVideo, 2000);
+          setTimeout(checkForVideo, 3000);
           
-          console.log('Video extraction script loaded');
+          // Load the embed page
+          const container = document.getElementById('container');
+          const iframe = document.createElement('iframe');
+          iframe.src = '${videoUrl}';
+          iframe.style.width = '100%';
+          iframe.style.height = '100%';
+          iframe.style.border = 'none';
+          iframe.allowFullscreen = true;
+          iframe.allow = 'autoplay; fullscreen; encrypted-media';
+          container.appendChild(iframe);
+          
+          console.log('🚀 Video extraction initialized');
         })();
       </script>
     </body>
@@ -363,7 +285,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     );
   }
 
-  // If we have extracted video URL, use native player
+  // If we have extracted video URL, use native player (react-native-video with ExoPlayer)
   if (useNativePlayer && extractedVideoUrl) {
     return (
       <View style={styles.container}>
@@ -375,25 +297,36 @@ const VideoPlayerScreen = ({ navigation, route }) => {
               ref={videoRef}
               source={{ uri: extractedVideoUrl }}
               style={styles.video}
-              useNativeControls
-              resizeMode={ResizeMode.CONTAIN}
-              isLooping={false}
-              shouldPlay={true}
+              controls={true}
+              resizeMode="contain"
+              repeat={false}
+              paused={false}
               onLoad={() => {
                 setLoading(false);
-                console.log("Native player loaded successfully");
+                console.log("ExoPlayer loaded successfully");
               }}
               onError={(error) => {
-                console.error("Native player error:", error);
+                console.error("ExoPlayer error:", error);
                 setError(error);
                 setUseNativePlayer(false); // Fallback to WebView
               }}
+              onBuffer={({ isBuffering }) => {
+                if (isBuffering) {
+                  console.log("Buffering...");
+                }
+              }}
+              fullscreen={true}
+              fullscreenAutorotate={true}
+              fullscreenOrientation="landscape"
+              playInBackground={false}
+              playWhenInactive={false}
+              ignoreSilentSwitch="ignore"
             />
             
             {loading && (
               <View style={styles.loadingOverlay}>
                 <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={styles.loadingText}>Loading native player...</Text>
+                <Text style={styles.loadingText}>Loading ExoPlayer...</Text>
               </View>
             )}
 
@@ -414,7 +347,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
                     )}
                   </View>
                   <View style={styles.nativePlayerBadge}>
-                    <Text style={styles.badgeText}>Native</Text>
+                    <Text style={styles.badgeText}>ExoPlayer</Text>
                   </View>
                 </View>
               </View>
