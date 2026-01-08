@@ -8,11 +8,14 @@ import {
   Platform,
   TouchableWithoutFeedback,
   BackHandler,
+  ActivityIndicator,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import colors from "../constants/colors";
 import * as ScreenOrientation from "expo-screen-orientation";
 import * as NavigationBar from "expo-navigation-bar";
 import { FullscreenIcon } from "../components/Icons";
+import { saveWatchProgress } from "../services/supabaseService";
 
 // Conditionally import WebView only for mobile
 let WebView = null;
@@ -29,11 +32,108 @@ const VideoPlayerScreen = ({ navigation, route }) => {
   const episode = params.episode || 1;
 
   const [error, setError] = useState(null);
-  const [showControls, setShowControls] = useState(true);
+  const [showControls, setShowControls] = useState(false);
   const controlsTimeout = useRef(null);
   const webViewRef = useRef(null);
+  const watchHistorySavedRef = useRef(false);
+  const progressIntervalRef = useRef(null);
+  const currentTimeRef = useRef(0);
+  const [videoUrl, setVideoUrl] = useState("");
+
+  // Storage key for this specific video
+  const getStorageKey = () => {
+    if (mediaType === "tv") {
+      return `vidrock_progress_${mediaId}_S${season}E${episode}`;
+    }
+    return `vidrock_progress_${mediaId}`;
+  };
+
+  // Save current progress to AsyncStorage
+  const saveProgress = async (seconds) => {
+    if (seconds < 5) return; // Don't save if barely watched
+    try {
+      const key = getStorageKey();
+      await AsyncStorage.setItem(key, JSON.stringify({
+        currentTime: Math.floor(seconds),
+        timestamp: Date.now(),
+      }));
+      console.log(`Progress saved: ${Math.floor(seconds)}s`);
+    } catch (error) {
+      console.error("Error saving progress:", error);
+    }
+  };
+
+  // Load saved progress from AsyncStorage
+  const loadProgress = async () => {
+    try {
+      const key = getStorageKey();
+      const data = await AsyncStorage.getItem(key);
+      if (data) {
+        const parsed = JSON.parse(data);
+        console.log(`Loaded saved progress: ${parsed.currentTime}s`);
+        return parsed.currentTime || 0;
+      }
+    } catch (error) {
+      console.error("Error loading progress:", error);
+    }
+    return 0;
+  };
+
+  // Construct the video URL with resume time parameter
+  const buildVideoUrl = async () => {
+    let url =
+      mediaType === "tv"
+        ? `https://vidrock.net/tv/${mediaId}/${season}/${episode}`
+        : `https://vidrock.net/movie/${mediaId}`;
+
+    // VidRock params - autoplay, no download button, explicitly unmuted
+    const params = ["autoplay=1", "download=false", "muted=0"];
+    if (mediaType === "tv") {
+      params.push("autonext=1");
+    }
+
+    // VidRock uses its own localStorage to remember position - it will auto-resume
+    // We track progress separately for Continue Watching display
+    const savedTime = await loadProgress();
+    if (savedTime > 10) {
+      console.log(`VidRock will auto-resume from last position (we tracked ${savedTime}s)`);
+    }
+
+    return url + "?" + params.join("&");
+  };
+
+  // Build video URL on mount
+  useEffect(() => {
+    buildVideoUrl().then(setVideoUrl);
+  }, []);
+
+  // Save to watch history for continue watching
+  const saveToWatchHistory = async () => {
+    if (watchHistorySavedRef.current) return;
+    
+    try {
+      await saveWatchProgress({
+        media_id: mediaId,
+        media_type: mediaType,
+        title: title,
+        poster_path: params.poster_path || null,
+        backdrop_path: params.backdrop_path || null,
+        season_number: mediaType === "tv" ? season : null,
+        episode_number: mediaType === "tv" ? episode : null,
+        episode_title: mediaType === "tv" ? params.episodeTitle : null,
+        progress_seconds: 0, // VidRock localStorage handles actual progress
+        duration_seconds: mediaType === "tv" ? 2400 : 6000,
+      });
+      watchHistorySavedRef.current = true;
+      console.log(`Added to watch history: ${title} ${mediaType === "tv" ? `S${season}E${episode}` : ""}`);
+    } catch (error) {
+      console.error("Failed to save watch history:", error);
+    }
+  };
 
   useEffect(() => {
+    // VidRock localStorage automatically handles resume - no need to track ourselves
+
     // Allow auto-rotation on mobile
     if (Platform.OS !== "web") {
       ScreenOrientation.unlockAsync();
@@ -54,8 +154,24 @@ const VideoPlayerScreen = ({ navigation, route }) => {
       }
     );
 
+    // Save to watch history after 5 seconds (for continue watching list)
+    const watchHistoryTimer = setTimeout(() => {
+      saveToWatchHistory();
+    }, 5000);
+
+    // Track progress - save every 10 seconds
+    progressIntervalRef.current = setInterval(() => {
+      saveProgress(currentTimeRef.current);
+    }, 10000);
+
     return () => {
       backHandler.remove();
+      clearTimeout(watchHistoryTimer);
+      if (progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+      // Save final progress on exit
+      saveProgress(currentTimeRef.current);
       // Lock back to portrait when leaving
       if (Platform.OS !== "web") {
         ScreenOrientation.lockAsync(
@@ -113,6 +229,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     }
   };
 
+  // Early return only if no mediaId
   if (!mediaId) {
     return (
       <View style={styles.container}>
@@ -128,23 +245,20 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     );
   }
 
-  // Construct the video URL - VidRock handles ALL progress via its own localStorage
-  const buildVideoUrl = () => {
-    let url =
-      mediaType === "tv"
-        ? `https://vidrock.net/tv/${mediaId}/${season}/${episode}`
-        : `https://vidrock.net/movie/${mediaId}`;
-
-    // VidRock params - autoplay and no download button
-    const params = ["autoplay=true", "download=false"];
-    if (mediaType === "tv") {
-      params.push("autonext=true");
-    }
-
-    return url + "?" + params.join("&");
-  };
-
-  const videoUrl = buildVideoUrl();
+  // Show loading while videoUrl is being built
+  if (!videoUrl) {
+    return (
+      <View style={styles.container}>
+        <StatusBar hidden />
+        <View style={styles.errorContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.errorText, { marginTop: 20 }]}>
+            Loading video...
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   // Render for Web
   if (Platform.OS === "web") {
@@ -199,18 +313,19 @@ const VideoPlayerScreen = ({ navigation, route }) => {
         src="${videoUrl}"
         id="videoFrame"
         allowfullscreen
-        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+        allow="autoplay; fullscreen; encrypted-media; picture-in-picture; accelerometer; gyroscope"
         referrerpolicy="origin"
       ></iframe>
       
       <script>
-        // Block ads and popups
+        // Block ads and popups only
         window.open = function() { return null; };
         window.alert = function() {};
         
+        // Remove ads periodically
         setInterval(() => {
-          document.querySelectorAll('[id*="ad"], [class*="ad"]').forEach(el => el.remove());
-        }, 1000);
+          document.querySelectorAll('[id*="banner"], [class*="banner"], [id*="popup"], [class*="popup"]').forEach(el => el.remove());
+        }, 3000);
       </script>
     </body>
     </html>
@@ -232,6 +347,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
             javaScriptEnabled={true}
             domStorageEnabled={true}
             androidLayerType="hardware"
+            androidHardwareAccelerationDisabled={false}
             onError={(e) => setError(e.nativeEvent.description)}
             mixedContentMode="always"
             originWhitelist={["*"]}
@@ -241,6 +357,20 @@ const VideoPlayerScreen = ({ navigation, route }) => {
             allowsProtectedMedia={true}
             sharedCookiesEnabled={true}
             thirdPartyCookiesEnabled={true}
+            cacheEnabled={true}
+            cacheMode="LOAD_DEFAULT"
+            incognito={false}
+            startInLoadingState={false}
+            onMessage={(event) => {
+              try {
+                const data = JSON.parse(event.nativeEvent.data);
+                if (data.type === 'progress' && data.currentTime) {
+                  currentTimeRef.current = data.currentTime;
+                }
+              } catch (error) {
+                // Ignore parse errors
+              }
+            }}
             onShouldStartLoadWithRequest={(request) => {
               const url = request.url.toLowerCase();
               const adPatterns = [

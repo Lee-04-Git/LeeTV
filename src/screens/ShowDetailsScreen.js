@@ -248,33 +248,23 @@ const ShowDetailsScreen = ({ navigation, route }) => {
 
               {/* Action Buttons */}
               <View style={styles.actionButtonsRow}>
-                <TouchableOpacity
-                  style={styles.playButtonMain}
-                  onPress={() => {
-                    if (show?.type === "movie") {
+                {show?.type === "movie" && (
+                  <TouchableOpacity
+                    style={styles.playButtonMain}
+                    onPress={() => {
                       navigation.navigate("VideoPlayer", {
                         title: show?.title,
                         mediaId: show?.id,
                         mediaType: "movie",
+                        poster_path: show?.poster_path,
+                        backdrop_path: show?.backdrop_path,
                       });
-                    } else if (
-                      show?.type === "tv" &&
-                      seasonDetails?.episodes?.length > 0
-                    ) {
-                      const firstEpisode = seasonDetails.episodes[0];
-                      navigation.navigate("VideoPlayer", {
-                        title: show?.title,
-                        mediaId: show?.id,
-                        mediaType: "tv",
-                        season: selectedSeason,
-                        episode: firstEpisode.episode_number,
-                      });
-                    }
-                  }}
-                >
-                  <PlayIcon size={24} color={colors.black} />
-                  <Text style={styles.playButtonMainText}>Play</Text>
-                </TouchableOpacity>
+                    }}
+                  >
+                    <PlayIcon size={24} color={colors.black} />
+                    <Text style={styles.playButtonMainText}>Play</Text>
+                  </TouchableOpacity>
+                )}
 
                 <TouchableOpacity
                   style={styles.myListButton}
@@ -421,7 +411,10 @@ const ShowDetailsScreen = ({ navigation, route }) => {
                                 mediaId: show?.id,
                                 mediaType: "tv",
                                 season: selectedSeason,
-                                episode: episode.episode_number,
+                                episode: episode.episodeNumber,
+                                episodeTitle: episode.name,
+                                poster_path: show?.poster_path,
+                                backdrop_path: show?.backdrop_path,
                               });
                             }}
                           >
@@ -447,21 +440,6 @@ const ShowDetailsScreen = ({ navigation, route }) => {
                                   "No description available."}
                               </Text>
                             </View>
-                            <TouchableOpacity
-                              style={styles.episodePlayButton}
-                              onPress={(e) => {
-                                e.stopPropagation();
-                                navigation.navigate("VideoPlayer", {
-                                  title: show?.title,
-                                  mediaId: show?.id,
-                                  mediaType: "tv",
-                                  season: selectedSeason,
-                                  episode: episode.episode_number,
-                                });
-                              }}
-                            >
-                              <PlayIcon size={20} color={colors.white} />
-                            </TouchableOpacity>
                           </TouchableOpacity>
                         ))}
                       </View>

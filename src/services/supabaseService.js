@@ -275,7 +275,7 @@ export const getContinueWatching = async (mediaType = null) => {
     const userId = getUserId();
     if (!userId) throw new Error("User not authenticated");
 
-    // Get all watch history for the user
+    // Get all watch history for the user, ordered by most recent
     let query = supabase
       .from("watch_history")
       .select("*")
@@ -291,32 +291,24 @@ export const getContinueWatching = async (mediaType = null) => {
 
     if (error) throw error;
 
-    // For TV shows: Keep only the LATEST episode per show (by media_id)
-    // For movies: Keep only the LATEST entry per movie (by media_id)
+    // Remove duplicates: Keep only the MOST RECENT entry per unique content
+    // For TV shows: group by media_id to show most recent episode watched
+    // For movies: group by media_id
     const uniqueContent = [];
-    const seenShowIds = new Set();
-    const seenMovieIds = new Set();
+    const seenIds = new Set();
 
     for (const item of data || []) {
-      if (item.media_type === "tv") {
-        // For TV shows, only add if we haven't seen this show yet
-        if (!seenShowIds.has(item.media_id)) {
-          uniqueContent.push(item);
-          seenShowIds.add(item.media_id);
-        }
-      } else {
-        // For movies, only add if we haven't seen this movie yet
-        if (!seenMovieIds.has(item.media_id)) {
-          uniqueContent.push(item);
-          seenMovieIds.add(item.media_id);
-        }
+      // Use media_id as unique identifier
+      if (!seenIds.has(item.media_id)) {
+        uniqueContent.push(item);
+        seenIds.add(item.media_id);
       }
     }
 
     console.log(
-      `Returning ${uniqueContent.length} unique continue watching items`
+      `Returning ${uniqueContent.length} unique continue watching items (most recent first)`
     );
-    return uniqueContent.slice(0, 10); // Limit to 10 items
+    return uniqueContent.slice(0, 15); // Limit to 15 items
   } catch (error) {
     console.error("Error getting continue watching:", error);
     return [];
@@ -378,6 +370,44 @@ export const removeWatchHistory = async (mediaId, mediaType) => {
     return true;
   } catch (error) {
     console.error("Error removing watch history:", error);
+    throw error;
+  }
+};
+
+export const clearAllWatchHistory = async () => {
+  try {
+    const userId = getUserId();
+    if (!userId) throw new Error("User not authenticated");
+
+    const { error } = await supabase
+      .from("watch_history")
+      .delete()
+      .eq("user_id", userId);
+
+    if (error) throw error;
+    console.log("All watch history cleared");
+    return true;
+  } catch (error) {
+    console.error("Error clearing all watch history:", error);
+    throw error;
+  }
+};
+
+export const clearUserList = async () => {
+  try {
+    const userId = getUserId();
+    if (!userId) throw new Error("User not authenticated");
+
+    const { error } = await supabase
+      .from("user_list")
+      .delete()
+      .eq("user_id", userId);
+
+    if (error) throw error;
+    console.log("All items cleared from user list");
+    return true;
+  } catch (error) {
+    console.error("Error clearing user list:", error);
     throw error;
   }
 };
