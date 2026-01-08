@@ -1,35 +1,100 @@
-import React from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  ScrollView,
+  Alert,
+  ActivityIndicator,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useFocusEffect } from "@react-navigation/native";
+import { signOut } from "firebase/auth";
+import { auth } from "../config/firebase";
 import colors from "../constants/colors";
-import { UserIcon, PlusIcon } from "../components/Icons";
+import { PencilIcon } from "../components/Icons";
+import { getUserProfile } from "../services/supabaseService";
+
+// Netflix-style avatar colors
+const AVATAR_COLORS = [
+  ["#1B264F", "#274690"],
+  ["#5E2BFF", "#8644A2"],
+  ["#00A8E1", "#0077B6"],
+  ["#E50914", "#B81D24"],
+  ["#46D369", "#2D9A46"],
+  ["#F5C518", "#D4A012"],
+];
 
 const UserProfileScreen = ({ navigation }) => {
-  const profiles = [
-    { id: 1, name: "User 1", color: "#FFD700", icon: "user" },
-    { id: 2, name: "User 2", color: "#FF6B6B", icon: "user" },
-    { id: 3, name: "User 3", color: "#4ECDC4", icon: "user" },
-    { id: 4, name: "Add Profile", color: colors.inputBackground, icon: "plus" },
-  ];
+  const [profile, setProfile] = useState({
+    name: "User",
+    avatarSeed: "user1",
+    avatarColorIndex: 0,
+  });
+  const [signingOut, setSigningOut] = useState(false);
 
-  const handleProfileSelect = (profile) => {
-    if (profile.id !== 4) {
-      navigation.navigate("Home");
+  useFocusEffect(
+    useCallback(() => {
+      loadProfile();
+    }, [])
+  );
+
+  const loadProfile = async () => {
+    try {
+      const supabaseProfile = await getUserProfile();
+      if (supabaseProfile) {
+        setProfile({
+          name: supabaseProfile.name || "User",
+          avatarSeed: supabaseProfile.avatarSeed || "user1",
+          avatarColorIndex: supabaseProfile.avatarColorIndex || 0,
+        });
+      }
+    } catch (error) {
+      console.error("Error loading profile:", error);
     }
+  };
+
+  const handleEditProfile = () => {
+    navigation.navigate("EditProfile");
+  };
+
+  const handleSignOut = async () => {
+    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: async () => {
+          setSigningOut(true);
+          try {
+            await signOut(auth);
+          } catch (error) {
+            console.error("Error signing out:", error);
+            Alert.alert("Error", "Failed to sign out. Please try again.");
+          } finally {
+            setSigningOut(false);
+          }
+        },
+      },
+    ]);
+  };
+
+  const handleContinue = () => {
+    navigation.navigate("Home");
+  };
+
+  // Generate DiceBear avatar URL
+  const getAvatarUrl = (seed, size = 150) => {
+    return `https://api.dicebear.com/7.x/avataaars/png?seed=${seed}&size=${size}&backgroundColor=transparent`;
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
 
-      {/* LeeTV Logo */}
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.logo}>LeeTV</Text>
       </View>
@@ -37,24 +102,55 @@ const UserProfileScreen = ({ navigation }) => {
       <View style={styles.content}>
         <Text style={styles.title}>Who's Watching?</Text>
 
-        <View style={styles.profilesContainer}>
-          {profiles.map((profile) => (
-            <TouchableOpacity
-              key={profile.id}
-              style={styles.profileItem}
-              onPress={() => handleProfileSelect(profile)}
+        {/* Profile Card - Click to continue */}
+        <View style={styles.profileCard}>
+          <TouchableOpacity
+            style={styles.avatarTouchable}
+            onPress={handleContinue}
+            activeOpacity={0.8}
+          >
+            <View
+              style={[
+                styles.avatarContainer,
+                {
+                  backgroundColor:
+                    AVATAR_COLORS[profile.avatarColorIndex]?.[0] || "#1B264F",
+                },
+              ]}
             >
-              <View style={[styles.avatar, { backgroundColor: profile.color }]}>
-                {profile.icon === "user" ? (
-                  <UserIcon size={48} color={colors.white} />
-                ) : (
-                  <PlusIcon size={48} color={colors.white} />
-                )}
-              </View>
-              <Text style={styles.profileName}>{profile.name}</Text>
-            </TouchableOpacity>
-          ))}
+              <Image
+                source={{ uri: getAvatarUrl(profile.avatarSeed, 200) }}
+                style={styles.avatarImage}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.profileName}>{profile.name}</Text>
+          </TouchableOpacity>
         </View>
+
+        {/* Manage Profile Button */}
+        <TouchableOpacity
+          style={styles.manageButton}
+          onPress={handleEditProfile}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.manageText}>Manage Profile</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Sign Out Button at Bottom */}
+      <View style={styles.footer}>
+        <TouchableOpacity
+          style={styles.signOutButton}
+          onPress={handleSignOut}
+          disabled={signingOut}
+        >
+          {signingOut ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.signOutText}>Sign Out</Text>
+          )}
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -63,19 +159,18 @@ const UserProfileScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: "#141414",
   },
   header: {
+    paddingTop: 20,
+    paddingBottom: 10,
     alignItems: "center",
-    paddingTop: 40,
-    paddingBottom: 30,
   },
   logo: {
-    fontSize: 48,
+    fontSize: 32,
     fontWeight: "bold",
     color: colors.netflixRed,
-    letterSpacing: 6,
-    textShadow: "0px 4px 12px rgba(229, 9, 20, 0.5)",
+    letterSpacing: 2,
   },
   content: {
     flex: 1,
@@ -84,43 +179,79 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   title: {
-    fontSize: 48,
-    fontWeight: "bold",
-    color: colors.white,
-    marginBottom: 60,
-    letterSpacing: 1,
-    textShadow: "0px 2px 8px rgba(0, 0, 0, 0.3)",
+    fontSize: 24,
+    color: "#FFFFFF",
+    marginBottom: 40,
+    fontWeight: "400",
   },
-  profilesContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "center",
-    maxWidth: 700,
-    gap: 20,
-  },
-  profileItem: {
+  profileCard: {
     alignItems: "center",
-    margin: 10,
-    width: 140,
+    marginBottom: 20,
   },
-  avatar: {
+  avatarTouchable: {
+    alignItems: "center",
+  },
+  avatarContainer: {
     width: 120,
     height: 120,
     borderRadius: 8,
+    overflow: "hidden",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
-    borderWidth: 3,
-    borderColor: "transparent",
-    boxShadow: "0px 4px 16px rgba(0, 0, 0, 0.4)",
-    elevation: 6,
+  },
+  avatarImage: {
+    width: 100,
+    height: 100,
   },
   profileName: {
-    color: colors.lightGray,
+    color: "#808080",
     fontSize: 16,
-    textAlign: "center",
+    marginTop: 12,
+    fontWeight: "400",
+  },
+  editIconButton: {
+    marginTop: 8,
+    padding: 8,
+  },
+  pencilIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(42, 42, 42, 0.6)",
+    borderWidth: 2,
+    borderColor: "#808080",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  manageButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: "#808080",
+    borderRadius: 4,
+  },
+  manageText: {
+    color: "#808080",
+    fontSize: 14,
     fontWeight: "500",
-    letterSpacing: 0.3,
+    letterSpacing: 1,
+  },
+  footer: {
+    paddingBottom: 40,
+    paddingHorizontal: 40,
+  },
+  signOutButton: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#808080",
+    paddingVertical: 12,
+    borderRadius: 4,
+    alignItems: "center",
+  },
+  signOutText: {
+    color: "#808080",
+    fontSize: 14,
+    fontWeight: "500",
   },
 });
 

@@ -13,7 +13,6 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import colors from "../constants/colors";
-import { useMyList } from "../context/MyListContext";
 import {
   PlusIcon,
   CheckIcon,
@@ -30,12 +29,16 @@ import {
   fetchSimilarTVShows,
   fetchRecommendedTVShows,
 } from "../services/tmdbApi";
+import {
+  addToList as addToSupabaseList,
+  removeFromList as removeFromSupabaseList,
+  isInList as checkIsInList,
+} from "../services/supabaseService";
 
 const { width } = Dimensions.get("window");
 
 const ShowDetailsScreen = ({ navigation, route }) => {
   const { show: initialShow } = route.params || {};
-  const { myList, addToList, removeFromList, isInList } = useMyList();
   const [show, setShow] = useState(initialShow);
   const [loading, setLoading] = useState(true);
   const [selectedSeason, setSelectedSeason] = useState(1);
@@ -44,11 +47,16 @@ const ShowDetailsScreen = ({ navigation, route }) => {
   const [showSeasonDropdown, setShowSeasonDropdown] = useState(false);
   const [relatedContent, setRelatedContent] = useState([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
-  const inList = isInList(show?.id);
+  const [inList, setInList] = useState(false);
+  const [checkingList, setCheckingList] = useState(true);
 
   useEffect(() => {
     loadDetails();
   }, [initialShow?.id]);
+
+  useEffect(() => {
+    checkListStatus();
+  }, [initialShow?.id, show?.id, show?.type]);
 
   useEffect(() => {
     if (show?.type === "tv" && show?.id) {
@@ -61,6 +69,50 @@ const ShowDetailsScreen = ({ navigation, route }) => {
       loadRelatedContent();
     }
   }, [show?.id, show?.type]);
+
+  const checkListStatus = async () => {
+    const mediaType =
+      show?.type ||
+      initialShow?.type ||
+      show?.media_type ||
+      initialShow?.media_type;
+    const mediaId = show?.id || initialShow?.id;
+
+    if (!mediaId || !mediaType) return;
+
+    try {
+      setCheckingList(true);
+      const status = await checkIsInList(mediaId, mediaType);
+      setInList(status);
+    } catch (error) {
+      console.error("Error checking list status:", error);
+    } finally {
+      setCheckingList(false);
+    }
+  };
+
+  const handleListToggle = async () => {
+    if (!show) return;
+
+    const mediaType = show.type || show.media_type || "movie";
+
+    try {
+      if (inList) {
+        await removeFromSupabaseList(show.id, mediaType);
+        setInList(false);
+      } else {
+        const mediaToAdd = {
+          ...show,
+          type: mediaType,
+          media_type: mediaType,
+        };
+        await addToSupabaseList(mediaToAdd);
+        setInList(true);
+      }
+    } catch (error) {
+      console.error("Error toggling list:", error);
+    }
+  };
 
   const loadDetails = async () => {
     if (!initialShow?.id) return;
@@ -226,13 +278,8 @@ const ShowDetailsScreen = ({ navigation, route }) => {
 
                 <TouchableOpacity
                   style={styles.myListButton}
-                  onPress={() => {
-                    if (inList) {
-                      removeFromList(show?.id);
-                    } else {
-                      addToList(show);
-                    }
-                  }}
+                  onPress={handleListToggle}
+                  disabled={checkingList}
                 >
                   {inList ? (
                     <CheckIcon size={24} color={colors.white} />

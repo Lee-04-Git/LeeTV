@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, memo, useRef } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,8 @@ import {
   Dimensions,
   Modal,
   Pressable,
-  ActivityIndicator,
+  FlatList,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import colors from "../constants/colors";
@@ -33,205 +34,486 @@ import {
   fetchOnTheAirTVShows,
   fetchMoviesByGenre,
   fetchTVShowsByGenre,
-  fetchAllMovies,
-  fetchAllTVShows,
   fetchAnime,
 } from "../services/tmdbApi";
+import { SkeletonRow, SkeletonFeatured } from "../components/SkeletonLoader";
+import { getUserProfile } from "../services/supabaseService";
 
 const { width } = Dimensions.get("window");
+
+// --- Configuration for Tabs and Sections ---
+
+const SECTIONS_CONFIG = {
+  Home: [
+    {
+      title: "Trending Now",
+      fn: fetchTrending,
+      params: ["week"],
+      id: "trending",
+    },
+    { title: "Anime", fn: fetchAnime, params: [1], id: "anime" },
+    {
+      title: "Popular Movies",
+      fn: fetchPopularMovies,
+      params: [1],
+      id: "pop_movies",
+    },
+    {
+      title: "Popular TV Shows",
+      fn: fetchPopularTVShows,
+      params: [1],
+      id: "pop_tv",
+    },
+    {
+      title: "Top Rated",
+      fn: fetchTopRatedMovies,
+      params: [1],
+      id: "top_rated",
+    },
+  ],
+  Movies: [
+    {
+      title: "Now Playing",
+      fn: fetchNowPlayingMovies,
+      params: [1],
+      id: "now_playing",
+    },
+    { title: "Upcoming", fn: fetchUpcomingMovies, params: [1], id: "upcoming" },
+    {
+      title: "Top Rated Movies",
+      fn: fetchTopRatedMovies,
+      params: [2],
+      id: "top_rated_movies",
+    },
+    {
+      title: "Action Movies",
+      fn: fetchMoviesByGenre,
+      params: [28, 1],
+      id: "action",
+    },
+    {
+      title: "Comedy Movies",
+      fn: fetchMoviesByGenre,
+      params: [35, 1],
+      id: "comedy",
+    },
+    {
+      title: "Horror Movies",
+      fn: fetchMoviesByGenre,
+      params: [27, 1],
+      id: "horror",
+    },
+    {
+      title: "Romance Movies",
+      fn: fetchMoviesByGenre,
+      params: [10749, 1],
+      id: "romance",
+    },
+    {
+      title: "Sci-Fi Movies",
+      fn: fetchMoviesByGenre,
+      params: [878, 1],
+      id: "scifi",
+    },
+  ],
+  "TV Shows": [
+    {
+      title: "Airing Today",
+      fn: fetchAiringTodayTVShows,
+      params: [1],
+      id: "airing_today",
+    },
+    {
+      title: "On The Air",
+      fn: fetchOnTheAirTVShows,
+      params: [1],
+      id: "on_the_air",
+    },
+    {
+      title: "Top Rated TV Shows",
+      fn: fetchTopRatedTVShows,
+      params: [2],
+      id: "top_rated_tv",
+    },
+    {
+      title: "Drama Series",
+      fn: fetchTVShowsByGenre,
+      params: [18, 1],
+      id: "drama",
+    },
+    {
+      title: "Comedy Series",
+      fn: fetchTVShowsByGenre,
+      params: [35, 1],
+      id: "comedy_tv",
+    },
+    {
+      title: "Crime Shows",
+      fn: fetchTVShowsByGenre,
+      params: [80, 1],
+      id: "crime",
+    },
+    {
+      title: "Sci-Fi & Fantasy",
+      fn: fetchTVShowsByGenre,
+      params: [10765, 1],
+      id: "scifi_tv",
+    },
+    {
+      title: "Animation",
+      fn: fetchTVShowsByGenre,
+      params: [16, 1],
+      id: "animation",
+    },
+  ],
+};
+
+const INITIAL_LOAD_COUNT = 7;
+const INCREMENTAL_LOAD_COUNT = 4;
+
+// --- Sub-Components ---
+
+const MovieItem = memo(({ item, onPress }) => (
+  <TouchableOpacity
+    style={styles.showCard}
+    onPress={() => onPress(item)}
+    activeOpacity={0.7}
+  >
+    <Image
+      source={{ uri: item.image }}
+      style={styles.showImage}
+      resizeMode="cover"
+    />
+    <View style={styles.showOverlay}>
+      <Text style={styles.showTitle} numberOfLines={1}>
+        {item.title}
+      </Text>
+      <View style={styles.showRatingRow}>
+        <StarIcon size={12} color="#FFD700" />
+        <Text style={styles.showRating}>{item.rating}</Text>
+      </View>
+    </View>
+  </TouchableOpacity>
+));
+
+const HorizontalList = memo(({ title, data, loading, onShowPress }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Trigger animation when loading becomes false
+  useEffect(() => {
+    if (!loading && data && data.length > 0) {
+      // Slight delay to allow images to start loading
+      const timer = setTimeout(() => {
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }).start();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [loading, data]);
+
+  const renderItem = useCallback(
+    ({ item }) => <MovieItem item={item} onPress={onShowPress} />,
+    [onShowPress]
+  );
+
+  if (loading) {
+    return <SkeletonRow />;
+  }
+
+  if (!data || data.length === 0) return null;
+
+  return (
+    <Animated.View style={[styles.section, { opacity: fadeAnim }]}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      <FlatList
+        data={data}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id.toString()}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.showList}
+        initialNumToRender={4}
+        maxToRenderPerBatch={6}
+        windowSize={3}
+        removeClippedSubviews={true}
+      />
+    </Animated.View>
+  );
+});
+
+const BrandSection = memo(({ navigation }) => (
+  <View style={styles.brandSection}>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.brandList}
+    >
+      {[
+        { name: "Marvel", img: require("../../assets/marvel.png") },
+        { name: "Star Wars", img: require("../../assets/star-wars.png") },
+        { name: "Anime", img: require("../../assets/anime.png") },
+        { name: "Hulu", img: require("../../assets/hulu.png") },
+        { name: "Disney", img: require("../../assets/disneyplus.jpg") },
+        { name: "DC", img: require("../../assets/dc.jpg") },
+        { name: "HBO Max", img: require("../../assets/max.jpg") },
+        { name: "Prime Video", img: null, text: true },
+      ].map((brand, index) => (
+        <TouchableOpacity
+          key={index}
+          style={styles.brandCard}
+          onPress={() =>
+            navigation.navigate("Franchise", { franchise: brand.name })
+          }
+        >
+          {brand.text ? (
+            <Text style={styles.brandPlaceholder}>{brand.name}</Text>
+          ) : (
+            <Image
+              source={brand.img}
+              style={styles.brandImage}
+              resizeMode="contain"
+            />
+          )}
+        </TouchableOpacity>
+      ))}
+    </ScrollView>
+  </View>
+));
+
+const FeaturedCarousel = memo(({ data, loading, navigation }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  if (loading) return <SkeletonFeatured />;
+  if (!data || data.length === 0) return null;
+
+  return (
+    <View style={styles.carouselContainer}>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={(e) => {
+          const index = Math.round(e.nativeEvent.contentOffset.x / width);
+          setCurrentIndex(index);
+        }}
+        scrollEventThrottle={16}
+      >
+        {data.map((item, index) => (
+          <TouchableOpacity
+            key={`featured-${index}`}
+            style={styles.featuredSlide}
+            onPress={() => navigation.navigate("ShowDetails", { show: item })}
+          >
+            <Image
+              source={{ uri: item.backdrop || item.image }}
+              style={styles.featuredImage}
+              resizeMode="cover"
+            />
+            <View style={styles.featuredOverlay}>
+              <View style={styles.featuredInfo}>
+                <Text style={styles.featuredTitle}>{item.title}</Text>
+                <TouchableOpacity style={styles.playButtonInline}>
+                  <PlayIcon size={16} color={colors.black} />
+                  <Text style={styles.playButtonText}>Play</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+      <View style={styles.carouselDots}>
+        {data.map((_, index) => (
+          <View
+            key={`dot-${index}`}
+            style={[styles.dot, currentIndex === index && styles.activeDot]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+});
+
+// --- Main Screen Component ---
 
 const HomeScreen = ({ navigation }) => {
   const [selectedTab, setSelectedTab] = useState("Home");
   const [showBrowseMenu, setShowBrowseMenu] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [featuredContent, setFeaturedContent] = useState(null);
-  const [featuredCarousel, setFeaturedCarousel] = useState([]);
-  const [currentFeaturedIndex, setCurrentFeaturedIndex] = useState(0);
 
-  // Home tab content
-  const [trendingContent, setTrendingContent] = useState([]);
-  const [popularMovies, setPopularMovies] = useState([]);
-  const [popularTVShows, setPopularTVShows] = useState([]);
-  const [topRatedContent, setTopRatedContent] = useState([]);
-  const [animeContent, setAnimeContent] = useState([]);
+  // Sections state: Array of { id, title, data, loading }
+  const [sections, setSections] = useState([]);
+  const [featuredData, setFeaturedData] = useState([]);
+  const [featuredLoading, setFeaturedLoading] = useState(true);
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [userAvatar, setUserAvatar] = useState({
+    seed: "user1",
+    colorIndex: 0,
+  });
 
-  // Large datasets for search
-  const [allMovies, setAllMovies] = useState([]);
-  const [allTVShows, setAllTVShows] = useState([]);
-
-  // Movies tab content
-  const [nowPlayingMovies, setNowPlayingMovies] = useState([]);
-  const [upcomingMovies, setUpcomingMovies] = useState([]);
-  const [topRatedMovies, setTopRatedMovies] = useState([]);
-  const [actionMovies, setActionMovies] = useState([]);
-  const [comedyMovies, setComedyMovies] = useState([]);
-  const [horrorMovies, setHorrorMovies] = useState([]);
-  const [romanceMovies, setRomanceMovies] = useState([]);
-  const [sciFiMovies, setSciFiMovies] = useState([]);
-
-  // TV Shows tab content
-  const [airingTodayShows, setAiringTodayShows] = useState([]);
-  const [onTheAirShows, setOnTheAirShows] = useState([]);
-  const [topRatedTVShows, setTopRatedTVShows] = useState([]);
-  const [dramaShows, setDramaShows] = useState([]);
-  const [comedyShows, setComedyShows] = useState([]);
-  const [crimeShows, setCrimeShows] = useState([]);
-  const [sciFiShows, setSciFiShows] = useState([]);
-  const [animationShows, setAnimationShows] = useState([]);
-
+  // Load Initial Content when Tab Changes
   useEffect(() => {
-    loadContent();
-  }, []);
+    let isCancelled = false;
+    loadUserProfile();
 
-  const loadContent = async () => {
+    const loadTab = async () => {
+      // Immediate state reset to show skeletons
+      setSections([]);
+      setFeaturedLoading(true);
+      setLoadedCount(0);
+
+      const config = SECTIONS_CONFIG[selectedTab] || [];
+
+      // Create initial placeholders
+      const initialBatch = config.slice(0, INITIAL_LOAD_COUNT);
+      const initialSections = initialBatch.map((item) => ({
+        ...item,
+        data: [],
+        loading: true,
+      }));
+
+      if (isCancelled) return;
+      setSections(initialSections);
+      setLoadedCount(initialBatch.length);
+
+      // If Home tab, fetch featured content (Trending) separately
+      if (selectedTab === "Home") {
+        try {
+          const trendingData = await fetchTrending("week");
+          if (!isCancelled) {
+            setFeaturedData(trendingData.slice(0, 4));
+            setFeaturedLoading(false);
+          }
+        } catch (e) {
+          console.error("Error loading featured:", e);
+          if (!isCancelled) setFeaturedLoading(false);
+        }
+      } else {
+        setFeaturedLoading(false);
+      }
+
+      // Fetch data for initial sections
+      if (!isCancelled) {
+        fetchSectionsdata(initialBatch, 0, isCancelled);
+      }
+    };
+
+    loadTab();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedTab]);
+
+  const loadUserProfile = async () => {
     try {
-      setLoading(true);
-
-      // Load Home tab content
-      const [trending, popMovies, popTV, topRated, anime] = await Promise.all([
-        fetchTrending("week"),
-        fetchPopularMovies(1),
-        fetchPopularTVShows(1),
-        fetchTopRatedMovies(1),
-        fetchAnime(1),
-      ]);
-
-      setTrendingContent(trending);
-      setPopularMovies(popMovies);
-      setPopularTVShows(popTV);
-      setTopRatedContent(topRated);
-      setAnimeContent(anime);
-
-      // Set up featured carousel with 4 items
-      const carouselItems = trending.slice(0, 4);
-      setFeaturedCarousel(carouselItems);
-      setFeaturedContent(carouselItems[0] || popMovies[0]);
-
-      // Load large datasets in background (400 movies and 400 TV shows)
-      fetchAllMovies(20).then(setAllMovies);
-      fetchAllTVShows(20).then(setAllTVShows);
-
-      // Load Movies tab content
-      const [
-        nowPlaying,
-        upcoming,
-        topMovies,
-        action,
-        comedy,
-        horror,
-        romance,
-        sciFi,
-      ] = await Promise.all([
-        fetchNowPlayingMovies(1),
-        fetchUpcomingMovies(1),
-        fetchTopRatedMovies(2),
-        fetchMoviesByGenre(28, 1), // Action
-        fetchMoviesByGenre(35, 1), // Comedy
-        fetchMoviesByGenre(27, 1), // Horror
-        fetchMoviesByGenre(10749, 1), // Romance
-        fetchMoviesByGenre(878, 1), // Sci-Fi
-      ]);
-
-      setNowPlayingMovies(nowPlaying);
-      setUpcomingMovies(upcoming);
-      setTopRatedMovies(topMovies);
-      setActionMovies(action);
-      setComedyMovies(comedy);
-      setHorrorMovies(horror);
-      setRomanceMovies(romance);
-      setSciFiMovies(sciFi);
-
-      // Load TV Shows tab content
-      const [
-        airingToday,
-        onTheAir,
-        topTV,
-        drama,
-        comedyTV,
-        crime,
-        sciFiTV,
-        animation,
-      ] = await Promise.all([
-        fetchAiringTodayTVShows(1),
-        fetchOnTheAirTVShows(1),
-        fetchTopRatedTVShows(2),
-        fetchTVShowsByGenre(18, 1), // Drama
-        fetchTVShowsByGenre(35, 1), // Comedy
-        fetchTVShowsByGenre(80, 1), // Crime
-        fetchTVShowsByGenre(10765, 1), // Sci-Fi & Fantasy
-        fetchTVShowsByGenre(16, 1), // Animation
-      ]);
-
-      setAiringTodayShows(airingToday);
-      setOnTheAirShows(onTheAir);
-      setTopRatedTVShows(topTV);
-      setDramaShows(drama);
-      setComedyShows(comedyTV);
-      setCrimeShows(crime);
-      setSciFiShows(sciFiTV);
-      setAnimationShows(animation);
+      const supabaseProfile = await getUserProfile();
+      if (supabaseProfile) {
+        setUserAvatar({
+          seed: supabaseProfile.avatarSeed || "user1",
+          colorIndex: supabaseProfile.avatarColorIndex || 0,
+        });
+      }
     } catch (error) {
-      console.error("Error loading content:", error);
-    } finally {
-      setLoading(false);
+      console.error("Error loading user profile:", error);
     }
   };
 
-  // Get categories based on selected tab
-  const getContentCategories = () => {
-    if (selectedTab === "Movies") {
-      return [
-        { title: "Now Playing", data: nowPlayingMovies },
-        { title: "Upcoming", data: upcomingMovies },
-        { title: "Top Rated Movies", data: topRatedMovies },
-        { title: "Action Movies", data: actionMovies },
-        { title: "Comedy Movies", data: comedyMovies },
-        { title: "Horror Movies", data: horrorMovies },
-        { title: "Romance Movies", data: romanceMovies },
-        { title: "Sci-Fi Movies", data: sciFiMovies },
-      ];
-    } else if (selectedTab === "TV Shows") {
-      return [
-        { title: "Airing Today", data: airingTodayShows },
-        { title: "On The Air", data: onTheAirShows },
-        { title: "Top Rated TV Shows", data: topRatedTVShows },
-        { title: "Drama Series", data: dramaShows },
-        { title: "Comedy Series", data: comedyShows },
-        { title: "Crime Shows", data: crimeShows },
-        { title: "Sci-Fi & Fantasy", data: sciFiShows },
-        { title: "Animation", data: animationShows },
-      ];
-    } else {
-      // Home tab - mix of both
-      return [
-        { title: "Trending Now", data: trendingContent },
-        { title: "Anime", data: animeContent },
-        { title: "Popular Movies", data: popularMovies },
-        { title: "Popular TV Shows", data: popularTVShows },
-        { title: "Top Rated", data: topRatedContent },
-      ];
-    }
+  const fetchSectionsdata = async (batch, startIndex, isCancelled = false) => {
+    // Fetch in parallel
+    const promises = batch.map(async (section, index) => {
+      try {
+        const data = await section.fn(...(section.params || []));
+
+        // Update this specific section in state
+        setSections((prev) => {
+          const newSections = [...prev];
+          const targetIndex = startIndex + index;
+          if (newSections[targetIndex]) {
+            newSections[targetIndex] = {
+              ...newSections[targetIndex],
+              data,
+              loading: false,
+            };
+          }
+          return newSections;
+        });
+      } catch (error) {
+        console.error(`Error loading section ${section.title}:`, error);
+        setSections((prev) => {
+          const newSections = [...prev];
+          const targetIndex = startIndex + index;
+          if (newSections[targetIndex]) {
+            newSections[targetIndex] = {
+              ...newSections[targetIndex],
+              loading: false,
+              error: true,
+            };
+          }
+          return newSections;
+        });
+      }
+    });
+
+    await Promise.all(promises);
   };
 
-  const showFeaturedSection = selectedTab === "Home";
+  const handleLoadMore = () => {
+    const config = SECTIONS_CONFIG[selectedTab];
+    if (loadedCount >= config.length) return;
 
-  const handleSignOut = () => {
-    setShowBrowseMenu(false);
-    navigation.navigate("Auth");
+    const nextBatch = config.slice(
+      loadedCount,
+      loadedCount + INCREMENTAL_LOAD_COUNT
+    );
+    if (nextBatch.length === 0) return;
+
+    // Add skeletons for next batch
+    const newPlaceholders = nextBatch.map((item) => ({
+      ...item,
+      data: [],
+      loading: true,
+    }));
+
+    const startIndex = loadedCount;
+    setSections((prev) => [...prev, ...newPlaceholders]);
+    setLoadedCount((prev) => prev + nextBatch.length);
+
+    // Fetch
+    fetchSectionsdata(nextBatch, startIndex);
   };
 
   const handleBrowseOption = (option) => {
     setShowBrowseMenu(false);
-    if (option === "TV Shows") {
-      setSelectedTab("TV Shows");
-    } else if (option === "Movies") {
-      setSelectedTab("Movies");
+    if (option === "TV Shows" || option === "Movies") {
+      setSelectedTab(option);
     } else if (option === "My List") {
       navigation.navigate("MyList");
     } else if (option === "Manage Profiles") {
       navigation.navigate("UserProfile");
     }
   };
+
+  const handleSignOut = () => {
+    setShowBrowseMenu(false);
+    navigation.navigate("Auth");
+  };
+
+  const renderHeader = () => (
+    <View>
+      {selectedTab === "Home" && (
+        <>
+          <FeaturedCarousel
+            data={featuredData}
+            loading={featuredLoading}
+            navigation={navigation}
+          />
+          <BrandSection navigation={navigation} />
+        </>
+      )}
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -242,7 +524,6 @@ const HomeScreen = ({ navigation }) => {
         <View style={styles.leftSection}>
           <TouchableOpacity
             onPress={() => {
-              // Do nothing if already on home - just reset any states if needed
               setSelectedTab("Home");
               setShowBrowseMenu(false);
             }}
@@ -271,9 +552,13 @@ const HomeScreen = ({ navigation }) => {
             style={styles.profileButton}
             onPress={() => navigation.navigate("UserProfile")}
           >
-            <View style={styles.profileIcon}>
-              <UserIcon size={24} color={colors.white} />
-            </View>
+            <Image
+              source={{
+                uri: `https://api.dicebear.com/7.x/avataaars/png?seed=${userAvatar.seed}&size=80&backgroundColor=transparent`,
+              }}
+              style={styles.profileAvatar}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
         </View>
       </View>
@@ -326,239 +611,25 @@ const HomeScreen = ({ navigation }) => {
         </View>
       )}
 
-      {/* Content */}
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.netflixRed} />
-            <Text style={styles.loadingText}>Loading content...</Text>
-          </View>
-        ) : (
-          <>
-            {/* Featured Carousel - Only show on Home */}
-            {showFeaturedSection && featuredCarousel.length > 0 && (
-              <>
-                <View style={styles.carouselContainer}>
-                  <ScrollView
-                    horizontal
-                    pagingEnabled
-                    showsHorizontalScrollIndicator={false}
-                    onScroll={(e) => {
-                      const index = Math.round(
-                        e.nativeEvent.contentOffset.x / width
-                      );
-                      setCurrentFeaturedIndex(index);
-                    }}
-                    scrollEventThrottle={16}
-                  >
-                    {featuredCarousel.map((item, index) => (
-                      <TouchableOpacity
-                        key={`featured-${index}`}
-                        style={styles.featuredSlide}
-                        onPress={() =>
-                          navigation.navigate("ShowDetails", { show: item })
-                        }
-                      >
-                        <Image
-                          source={{
-                            uri: item.backdrop || item.image,
-                          }}
-                          style={styles.featuredImage}
-                          resizeMode="cover"
-                        />
-                        <View style={styles.featuredOverlay}>
-                          <View style={styles.featuredInfo}>
-                            <Text style={styles.featuredTitle}>
-                              {item.title}
-                            </Text>
-                            <TouchableOpacity style={styles.playButtonInline}>
-                              <PlayIcon size={16} color={colors.black} />
-                              <Text style={styles.playButtonText}>Play</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-
-                  {/* Carousel Dots Indicator */}
-                  <View style={styles.carouselDots}>
-                    {featuredCarousel.map((_, index) => (
-                      <View
-                        key={`dot-${index}`}
-                        style={[
-                          styles.dot,
-                          currentFeaturedIndex === index && styles.activeDot,
-                        ]}
-                      />
-                    ))}
-                  </View>
-                </View>
-
-                {/* Franchise Brand Cards */}
-                <View style={styles.brandSection}>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.brandList}
-                  >
-                    <TouchableOpacity
-                      style={styles.brandCard}
-                      onPress={() =>
-                        navigation.navigate("Franchise", {
-                          franchise: "Marvel",
-                        })
-                      }
-                    >
-                      <Image
-                        source={require("../../assets/marvel.png")}
-                        style={styles.brandImage}
-                        resizeMode="contain"
-                      />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.brandCard}
-                      onPress={() =>
-                        navigation.navigate("Franchise", {
-                          franchise: "Star Wars",
-                        })
-                      }
-                    >
-                      <Image
-                        source={require("../../assets/star wars.png")}
-                        style={styles.brandImage}
-                        resizeMode="contain"
-                      />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.brandCard}
-                      onPress={() =>
-                        navigation.navigate("Franchise", { franchise: "Anime" })
-                      }
-                    >
-                      <Image
-                        source={require("../../assets/anime.png")}
-                        style={styles.brandImage}
-                        resizeMode="contain"
-                      />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.brandCard}
-                      onPress={() =>
-                        navigation.navigate("Franchise", { franchise: "Hulu" })
-                      }
-                    >
-                      <Image
-                        source={require("../../assets/hulu.png")}
-                        style={styles.brandImage}
-                        resizeMode="contain"
-                      />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.brandCard}
-                      onPress={() =>
-                        navigation.navigate("Franchise", {
-                          franchise: "Disney",
-                        })
-                      }
-                    >
-                      <Image
-                        source={require("../../assets/disneyplus.jpg")}
-                        style={styles.brandImage}
-                        resizeMode="contain"
-                      />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.brandCard}
-                      onPress={() =>
-                        navigation.navigate("Franchise", { franchise: "DC" })
-                      }
-                    >
-                      <Image
-                        source={require("../../assets/dc.jpg")}
-                        style={styles.brandImage}
-                        resizeMode="contain"
-                      />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.brandCard}
-                      onPress={() =>
-                        navigation.navigate("Franchise", {
-                          franchise: "HBO Max",
-                        })
-                      }
-                    >
-                      <Image
-                        source={require("../../assets/max.jpg")}
-                        style={styles.brandImage}
-                        resizeMode="contain"
-                      />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.brandCard}
-                      onPress={() =>
-                        navigation.navigate("Franchise", {
-                          franchise: "Prime Video",
-                        })
-                      }
-                    >
-                      <Text style={styles.brandPlaceholder}>Prime Video</Text>
-                    </TouchableOpacity>
-                  </ScrollView>
-                </View>
-              </>
-            )}
-
-            {/* Dynamic Content Categories */}
-            {getContentCategories().map((category, index) => {
-              if (!category.data || category.data.length === 0) return null;
-
-              return (
-                <View key={`category-${index}`} style={styles.section}>
-                  <Text style={styles.sectionTitle}>{category.title}</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.showList}
-                  >
-                    {category.data.map((item) => (
-                      <TouchableOpacity
-                        key={`${category.title}-${item.id}`}
-                        style={styles.showCard}
-                        onPress={() =>
-                          navigation.navigate("ShowDetails", { show: item })
-                        }
-                      >
-                        <Image
-                          source={{ uri: item.image }}
-                          style={styles.showImage}
-                          resizeMode="cover"
-                        />
-                        <View style={styles.showOverlay}>
-                          <Text style={styles.showTitle} numberOfLines={1}>
-                            {item.title}
-                          </Text>
-                          <View style={styles.showRatingRow}>
-                            <StarIcon size={12} color="#FFD700" />
-                            <Text style={styles.showRating}>{item.rating}</Text>
-                          </View>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              );
-            })}
-          </>
+      {/* Main Content List */}
+      <FlatList
+        data={sections}
+        renderItem={({ item }) => (
+          <HorizontalList
+            title={item.title}
+            data={item.data}
+            loading={item.loading}
+            onShowPress={(show) => navigation.navigate("ShowDetails", { show })}
+          />
         )}
-      </ScrollView>
+        keyExtractor={(item, index) => `${selectedTab}-${item.id}-${index}`}
+        ListHeaderComponent={renderHeader}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        contentContainerStyle={{ paddingBottom: 20 }}
+        showsVerticalScrollIndicator={false}
+        extraData={selectedTab}
+      />
     </SafeAreaView>
   );
 };
@@ -577,6 +648,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255, 255, 255, 0.1)",
+    zIndex: 2000,
   },
   leftSection: {
     flexDirection: "row",
@@ -614,22 +686,17 @@ const styles = StyleSheet.create({
   profileButton: {
     position: "relative",
   },
-  profileIcon: {
+  profileAvatar: {
     width: 32,
     height: 32,
     borderRadius: 4,
-    backgroundColor: colors.netflixRed,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  profileIconText: {
-    fontSize: 18,
+    backgroundColor: "#1B264F",
   },
   dropdownContainer: {
     position: "absolute",
     top: 60,
     left: 20,
-    zIndex: 1000,
+    zIndex: 3000,
   },
   dropdownOverlay: {
     position: "absolute",
@@ -642,7 +709,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBackground,
     borderRadius: 4,
     minWidth: 180,
-    boxShadow: "0px 4px 8px rgba(0, 0, 0, 0.3)",
     elevation: 8,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
@@ -663,21 +729,6 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
-  content: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 100,
-  },
-  loadingText: {
-    color: colors.white,
-    fontSize: 16,
-    marginTop: 16,
-    fontWeight: "600",
-  },
   carouselContainer: {
     width: width,
     height: width * 1.1,
@@ -697,8 +748,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     paddingBottom: 40,
     paddingHorizontal: 20,
-    background:
-      "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.7) 100%)",
+    backgroundColor: "rgba(0,0,0,0.3)", // Fallback
   },
   featuredInfo: {
     alignItems: "flex-start",
@@ -766,14 +816,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 8,
+    elevation: 5,
   },
   brandImage: {
     width: "100%",
@@ -801,10 +844,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   showCard: {
+    width: 110,
     marginRight: 10,
     borderRadius: 6,
     overflow: "hidden",
     position: "relative",
+    backgroundColor: "#1a1a1a",
   },
   showImage: {
     width: 110,
@@ -834,15 +879,6 @@ const styles = StyleSheet.create({
     color: colors.lightGray,
     fontSize: 11,
     fontWeight: "600",
-  },
-  showRatingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  showRating: {
-    color: colors.lightGray,
-    fontSize: 11,
   },
 });
 

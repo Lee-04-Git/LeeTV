@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,121 +9,149 @@ import {
   SafeAreaView,
   Dimensions,
   StatusBar,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
+// Removing AsyncStorage as we use Supabase now
 import { LinearGradient } from "expo-linear-gradient";
+import { useFocusEffect } from "@react-navigation/native";
 import colors from "../constants/colors";
-import { useMyList } from "../context/MyListContext";
-import { PlayIcon, StarIcon, DownloadIcon, CheckIcon } from "../components/Icons";
+import {
+  PlayIcon,
+  StarIcon,
+  DownloadIcon,
+  CheckIcon,
+} from "../components/Icons";
+import {
+  getUserList,
+  removeFromList,
+  getContinueWatching,
+} from "../services/supabaseService";
 
 const { width } = Dimensions.get("window");
 
+const getImageUrl = (posterPath) => {
+  if (!posterPath) {
+    return "https://via.placeholder.com/300x450/1a1a1a/ffffff?text=No+Image";
+  }
+
+  // If it's already a full URL, return as is
+  if (posterPath.startsWith("http")) {
+    return posterPath;
+  }
+
+  // If it starts with /, construct TMDB URL
+  if (posterPath.startsWith("/")) {
+    return `https://image.tmdb.org/t/p/w500${posterPath}`;
+  }
+
+  // Otherwise, assume it needs a / prefix
+  return `https://image.tmdb.org/t/p/w500/${posterPath}`;
+};
+
 const MyListScreen = ({ navigation }) => {
-  const { myList } = useMyList();
   const [selectedTab, setSelectedTab] = useState("Movies");
+  const [myList, setMyList] = useState([]);
+  const [continueWatching, setContinueWatching] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Dummy data for movies in My List
-  const dummyMovies = [
-    {
-      id: "mylist-movie-1",
-      title: "The Irishman",
-      image: "https://placehold.co/300x450/2C3E50/FFFFFF?text=The+Irishman",
-      type: "movie",
-      rating: 8.7,
-    },
-    {
-      id: "mylist-movie-2",
-      title: "Extraction",
-      image: "https://placehold.co/300x450/34495E/FFFFFF?text=Extraction",
-      type: "movie",
-      rating: 6.8,
-    },
-    {
-      id: "mylist-movie-3",
-      title: "The Old Guard",
-      image: "https://placehold.co/300x450/5D6D7E/FFFFFF?text=The+Old+Guard",
-      type: "movie",
-      rating: 7.2,
-    },
-    {
-      id: "mylist-movie-4",
-      title: "Enola Holmes",
-      image: "https://placehold.co/300x450/7B8794/FFFFFF?text=Enola+Holmes",
-      type: "movie",
-      rating: 7.6,
-    },
-  ];
+  useFocusEffect(
+    useCallback(() => {
+      loadList();
+      loadContinueWatching();
+    }, [selectedTab])
+  );
 
-  // Dummy data for TV shows in My List
-  const dummyTvShows = [
-    {
-      id: "mylist-tv-1",
-      title: "Money Heist",
-      image: "https://placehold.co/300x450/C0392B/FFFFFF?text=Money+Heist",
-      type: "tv",
-      rating: 8.5,
-    },
-    {
-      id: "mylist-tv-2",
-      title: "Stranger Things",
-      image: "https://placehold.co/300x450/E74C3C/FFFFFF?text=Stranger+Things",
-      type: "tv",
-      rating: 8.7,
-    },
-    {
-      id: "mylist-tv-3",
-      title: "The Crown",
-      image: "https://placehold.co/300x450/EC7063/FFFFFF?text=The+Crown",
-      type: "tv",
-      rating: 8.6,
-    },
-    {
-      id: "mylist-tv-4",
-      title: "Dark",
-      image: "https://placehold.co/300x450/F1948A/FFFFFF?text=Dark",
-      type: "tv",
-      rating: 8.8,
-    },
-  ];
+  const loadList = async () => {
+    try {
+      setLoading(true);
+      const list = await getUserList();
+      console.log("========== MY LIST DATA ==========");
+      console.log("Total items loaded:", list.length);
+      list.forEach((item, index) => {
+        console.log(`Item ${index + 1}:`, {
+          title: item.title,
+          media_type: item.media_type,
+          poster_path: item.poster_path,
+          media_id: item.media_id,
+        });
+      });
+      console.log("==================================");
+      setMyList(list);
+    } catch (error) {
+      console.error("Error loading list:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Continue Watching dummy data
-  const continueWatchingList = [
-    {
-      id: "continue-1",
-      title: "Stranger Things",
-      episode: "S4 E5 • The Nina Project",
-      image: "https://placehold.co/400x225/E74C3C/FFFFFF?text=Stranger+Things",
-      progress: 65,
-      type: "tv",
-    },
-    {
-      id: "continue-2",
-      title: "Breaking Bad",
-      episode: "S3 E7 • One Minute",
-      image: "https://placehold.co/400x225/27AE60/FFFFFF?text=Breaking+Bad",
-      progress: 42,
-      type: "tv",
-    },
-    {
-      id: "continue-3",
-      title: "The Witcher",
-      episode: "S2 E3 • What Is Lost",
-      image: "https://placehold.co/400x225/8E44AD/FFFFFF?text=The+Witcher",
-      progress: 88,
-      type: "tv",
-    },
-  ];
+  const loadContinueWatching = async () => {
+    try {
+      // Filter by media type based on selected tab
+      const mediaType = selectedTab === "Movies" ? "movie" : "tv";
+
+      // Load from Supabase (cloud database)
+      const watching = await getContinueWatching(mediaType);
+
+      console.log(
+        `Loaded ${watching.length} continue watching items from Supabase for ${mediaType}`
+      );
+      setContinueWatching(watching);
+    } catch (error) {
+      console.error("Error loading continue watching:", error);
+      setContinueWatching([]);
+    }
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([loadList(), loadContinueWatching()]);
+    setRefreshing(false);
+  };
+
+  const handleRemove = async (mediaId, mediaType) => {
+    try {
+      await removeFromList(mediaId, mediaType);
+      setMyList(
+        myList.filter(
+          (item) =>
+            !(item.media_id === mediaId && item.media_type === mediaType)
+        )
+      );
+    } catch (error) {
+      console.error("Error removing from list:", error);
+    }
+  };
 
   // Filter content by selected tab
-  const displayedContent =
-    selectedTab === "Movies" ? dummyMovies : dummyTvShows;
+  const displayedContent = myList.filter((item) =>
+    selectedTab === "Movies"
+      ? item.media_type === "movie"
+      : item.media_type === "tv"
+  );
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.white}
+          />
+        }
+      >
         {/* Header with Gradient Background */}
         <LinearGradient
-          colors={["rgba(0, 0, 0, 0.95)", "rgba(0, 0, 0, 0.5)", "rgba(0, 0, 0, 0)"]}
+          colors={[
+            "rgba(0, 0, 0, 0.95)",
+            "rgba(0, 0, 0, 0.5)",
+            "rgba(0, 0, 0, 0)",
+          ]}
           style={styles.headerGradient}
         >
           <View style={styles.headerContainer}>
@@ -139,10 +167,6 @@ const MyListScreen = ({ navigation }) => {
                 {myList.length} {myList.length === 1 ? "title" : "titles"} saved
               </Text>
             </View>
-            <TouchableOpacity style={styles.downloadAllButton}>
-              <DownloadIcon size={22} color={colors.white} />
-              <Text style={styles.downloadAllText}>All</Text>
-            </TouchableOpacity>
           </View>
 
           {/* Premium Tab System */}
@@ -167,12 +191,19 @@ const MyListScreen = ({ navigation }) => {
           </View>
         </LinearGradient>
 
+        {/* Loading State */}
+        {loading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        )}
+
         {/* Continue Watching Section */}
-        {continueWatchingList.length > 0 && (
+        {!loading && continueWatching.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Continue Watching</Text>
-              <Text style={styles.sectionCount}>{continueWatchingList.length}</Text>
+              <Text style={styles.sectionCount}>{continueWatching.length}</Text>
             </View>
             <ScrollView
               horizontal
@@ -180,137 +211,244 @@ const MyListScreen = ({ navigation }) => {
               style={styles.horizontalList}
               contentContainerStyle={{ paddingRight: 20 }}
             >
-              {continueWatchingList.map((item) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={styles.continueCard}
-                  onPress={() =>
-                    navigation.navigate("ShowDetails", { show: item })
-                  }
-                  activeOpacity={0.9}
-                >
-                  <View style={styles.continueImageContainer}>
-                    <Image
-                      source={{ uri: item.image }}
-                      style={styles.continueImage}
-                    />
-                    
-                    {/* Dark overlay with gradient */}
-                    <LinearGradient
-                      colors={["transparent", "rgba(0,0,0,0.75)"]}
-                      style={styles.continueGradientOverlay}
-                    >
-                      <View style={styles.episodeOverlayInfo}>
-                        <Text style={styles.episodeNumber}>{item.episode}</Text>
-                      </View>
-                    </LinearGradient>
+              {continueWatching.map((item, index) => {
+                const posterUrl = getImageUrl(item.poster_path);
+                const progressPercent = item.progress_percentage || 0;
 
-                    {/* Play Button Overlay */}
-                    <View style={styles.continueOverlay}>
-                      <View style={styles.playButtonCircle}>
-                        <PlayIcon size={26} color={colors.black} />
+                // Use Supabase row ID for truly unique key, fallback to media info + index
+                const uniqueKey = item.id
+                  ? `cw-${item.id}`
+                  : item.media_type === "tv"
+                  ? `tv-${item.media_id}-s${item.season_number}-e${item.episode_number}-${index}`
+                  : `movie-${item.media_id}-${index}`;
+
+                return (
+                  <TouchableOpacity
+                    key={uniqueKey}
+                    style={styles.continueCard}
+                    onPress={() => {
+                      if (item.media_type === "tv") {
+                        navigation.navigate("VideoPlayer", {
+                          title: item.title,
+                          mediaId: item.media_id,
+                          mediaType: "tv",
+                          season: item.season_number,
+                          episode: item.episode_number,
+                          poster_path: item.poster_path,
+                          backdrop_path: item.backdrop_path,
+                          episodeTitle: item.episode_title,
+                          // Pass saved progress directly to skip Supabase query
+                          savedProgress: item.progress_seconds,
+                          savedDuration: item.duration_seconds,
+                        });
+                      } else {
+                        navigation.navigate("VideoPlayer", {
+                          title: item.title,
+                          mediaId: item.media_id,
+                          mediaType: "movie",
+                          poster_path: item.poster_path,
+                          backdrop_path: item.backdrop_path,
+                          // Pass saved progress directly to skip Supabase query
+                          savedProgress: item.progress_seconds,
+                          savedDuration: item.duration_seconds,
+                        });
+                      }
+                    }}
+                    activeOpacity={0.9}
+                  >
+                    <View style={styles.continueImageContainer}>
+                      <Image
+                        source={{ uri: posterUrl }}
+                        style={styles.continueImage}
+                        resizeMode="cover"
+                      />
+
+                      {/* Dark overlay with gradient */}
+                      <LinearGradient
+                        colors={["transparent", "rgba(0,0,0,0.75)"]}
+                        style={styles.continueGradientOverlay}
+                      >
+                        <View style={styles.episodeOverlayInfo}>
+                          {item.media_type === "tv" && (
+                            <Text style={styles.episodeNumber}>
+                              S{item.season_number} E{item.episode_number}
+                            </Text>
+                          )}
+                        </View>
+                      </LinearGradient>
+
+                      {/* Play Button Overlay */}
+                      <View style={styles.continueOverlay}>
+                        <View style={styles.playButtonCircle}>
+                          <PlayIcon size={26} color={colors.black} />
+                        </View>
+                      </View>
+
+                      {/* Progress Bar */}
+                      <View style={styles.progressBarContainer}>
+                        <View style={styles.progressBar}>
+                          <View
+                            style={[
+                              styles.progressFill,
+                              { width: `${Math.min(progressPercent, 100)}%` },
+                            ]}
+                          />
+                        </View>
                       </View>
                     </View>
 
-                    {/* Progress Bar */}
-                    <View style={styles.progressBarContainer}>
-                      <View style={styles.progressBar}>
-                        <View
-                          style={[
-                            styles.progressFill,
-                            { width: `${item.progress}%` },
-                          ]}
-                        />
-                      </View>
+                    <View style={styles.continueInfo}>
+                      <Text style={styles.continueTitle} numberOfLines={1}>
+                        {item.title}
+                      </Text>
+                      {item.media_type === "tv" && item.episode_title && (
+                        <Text style={styles.continueEpisode} numberOfLines={1}>
+                          {item.episode_title}
+                        </Text>
+                      )}
                     </View>
-                  </View>
-
-                  <View style={styles.continueInfo}>
-                    <Text style={styles.continueTitle} numberOfLines={1}>
-                      {item.title}
-                    </Text>
-                    <Text style={styles.continueEpisode}>{item.episode}</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           </View>
         )}
 
-        {/* My List Grid Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>
-              My {selectedTab === "Movies" ? "Movies" : "TV Shows"}
-            </Text>
-            <Text style={styles.sectionCount}>{displayedContent.length}</Text>
-          </View>
-
-          {displayedContent.length === 0 ? (
-            <View style={styles.emptySection}>
-              <View style={styles.emptyIconContainer}>
-                <CheckIcon size={44} color={colors.gray} />
-              </View>
+        {/* Empty State */}
+        {!loading &&
+          displayedContent.length === 0 &&
+          continueWatching.length === 0 && (
+            <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>
-                No {selectedTab === "Movies" ? "movies" : "shows"} yet
+                No {selectedTab.toLowerCase()} in your list yet
               </Text>
               <Text style={styles.emptySubtext}>
-                Start adding {selectedTab === "Movies" ? "movies" : "shows"} to
-                build your collection
+                Add some from the home screen!
               </Text>
             </View>
-          ) : (
-            <View style={styles.gridContainer}>
-              {displayedContent.map((item) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={styles.card}
-                  onPress={() =>
-                    navigation.navigate("ShowDetails", { show: item })
-                  }
-                  activeOpacity={0.9}
-                >
-                  <View style={styles.cardImageContainer}>
-                    <Image source={{ uri: item.image }} style={styles.image} />
-                    
-                    {/* Gradient Overlay on Image */}
-                    <LinearGradient
-                      colors={["transparent", "rgba(0,0,0,0.9)"]}
-                      style={styles.cardGradientOverlay}
-                    >
-                      <View style={styles.cardBottomInfo}>
-                        <View style={styles.ratingBadge}>
-                          <StarIcon size={11} color="#FFD700" />
-                          <Text style={styles.ratingBadgeText}>{item.rating}</Text>
-                        </View>
-                      </View>
-                    </LinearGradient>
-
-                    {/* Hover Play Button */}
-                    <View style={styles.cardOverlay}>
-                      <View style={styles.playButtonSmall}>
-                        <PlayIcon size={22} color={colors.black} />
-                      </View>
-                    </View>
-
-                    {/* Top Badge - In List Indicator */}
-                    <View style={styles.topBadgeContainer}>
-                      <View style={styles.inListBadge}>
-                        <CheckIcon size={11} color={colors.white} />
-                      </View>
-                    </View>
-                  </View>
-
-                  <View style={styles.cardInfo}>
-                    <Text style={styles.itemTitle} numberOfLines={2}>
-                      {item.title}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
           )}
-        </View>
+
+        {/* My List Grid Section */}
+        {!loading && displayedContent.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>
+                My {selectedTab === "Movies" ? "Movies" : "TV Shows"}
+              </Text>
+              <Text style={styles.sectionCount}>{displayedContent.length}</Text>
+            </View>
+
+            {displayedContent.length === 0 ? (
+              <View style={styles.emptySection}>
+                <View style={styles.emptyIconContainer}>
+                  <CheckIcon size={44} color={colors.gray} />
+                </View>
+                <Text style={styles.emptyText}>
+                  No {selectedTab === "Movies" ? "movies" : "shows"} yet
+                </Text>
+                <Text style={styles.emptySubtext}>
+                  Start adding {selectedTab === "Movies" ? "movies" : "shows"}{" "}
+                  to build your collection
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.gridContainer}>
+                {displayedContent.map((item) => {
+                  const posterUrl = getImageUrl(item.poster_path);
+
+                  console.log(
+                    "Item:",
+                    item.title,
+                    "poster_path:",
+                    item.poster_path,
+                    "Full URL:",
+                    posterUrl
+                  );
+
+                  return (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.card}
+                      onPress={() =>
+                        navigation.navigate("ShowDetails", {
+                          show: {
+                            id: item.media_id,
+                            title: item.title,
+                            name: item.title,
+                            poster_path: item.poster_path,
+                            backdrop_path: item.backdrop_path,
+                            vote_average: item.vote_average,
+                            release_date: item.release_date,
+                            type: item.media_type,
+                            media_type: item.media_type,
+                          },
+                        })
+                      }
+                      activeOpacity={0.9}
+                    >
+                      <View style={styles.cardImageContainer}>
+                        <Image
+                          source={{ uri: posterUrl }}
+                          style={styles.image}
+                          resizeMode="cover"
+                          onError={(e) =>
+                            console.log(
+                              "Image load error:",
+                              e.nativeEvent.error
+                            )
+                          }
+                          onLoad={() => console.log("Image loaded:", posterUrl)}
+                        />
+
+                        {/* Gradient Overlay on Image */}
+                        <LinearGradient
+                          colors={["transparent", "rgba(0,0,0,0.9)"]}
+                          style={styles.cardGradientOverlay}
+                        >
+                          <View style={styles.cardBottomInfo}>
+                            {item.vote_average && (
+                              <View style={styles.ratingBadge}>
+                                <StarIcon size={11} color="#FFD700" />
+                                <Text style={styles.ratingBadgeText}>
+                                  {item.vote_average.toFixed(1)}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        </LinearGradient>
+
+                        {/* Hover Play Button */}
+                        <View style={styles.cardOverlay}>
+                          <View style={styles.playButtonSmall}>
+                            <PlayIcon size={22} color={colors.black} />
+                          </View>
+                        </View>
+
+                        {/* Top Badge - Remove from List */}
+                        <TouchableOpacity
+                          style={styles.topBadgeContainer}
+                          onPress={() =>
+                            handleRemove(item.media_id, item.media_type)
+                          }
+                        >
+                          <View style={styles.inListBadge}>
+                            <CheckIcon size={11} color={colors.white} />
+                          </View>
+                        </TouchableOpacity>
+                      </View>
+
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.itemTitle} numberOfLines={2}>
+                          {item.title}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Bottom Spacing */}
         <View style={styles.bottomSpacer} />
@@ -326,6 +464,29 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  loadingContainer: {
+    paddingVertical: 60,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyContainer: {
+    paddingVertical: 80,
+    paddingHorizontal: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyText: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  emptySubtext: {
+    color: colors.lightGray,
+    fontSize: 14,
+    textAlign: "center",
   },
   headerGradient: {
     paddingBottom: 8,
@@ -608,6 +769,7 @@ const styles = StyleSheet.create({
   image: {
     width: "100%",
     aspectRatio: 2 / 3,
+    backgroundColor: colors.cardBackground,
   },
   cardGradientOverlay: {
     position: "absolute",

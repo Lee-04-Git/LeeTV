@@ -8,6 +8,7 @@ import {
   ScrollView,
   Image,
   ActivityIndicator,
+  FlatList,
 } from "react-native";
 import colors from "../constants/colors";
 import { fetchFranchiseContent } from "../services/tmdbApi";
@@ -48,6 +49,28 @@ const FranchiseScreen = ({ navigation, route }) => {
     });
   };
 
+  const renderItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.card}
+      onPress={() => handleContentPress(item)}
+    >
+      <Image
+        source={{ uri: item.image }}
+        style={styles.poster}
+        resizeMode="cover"
+      />
+      <View style={styles.cardInfo}>
+        <Text style={styles.cardTitle} numberOfLines={2}>
+          {item.title}
+        </Text>
+        <View style={styles.cardMeta}>
+          <Text style={styles.cardYear}>{item.year}</Text>
+          <Text style={styles.cardRating}>⭐ {item.rating}</Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -83,35 +106,25 @@ const FranchiseScreen = ({ navigation, route }) => {
           <Text style={styles.loadingText}>Loading {franchise} content...</Text>
         </View>
       ) : (
-        <ScrollView style={styles.content}>
-          <View style={styles.grid}>
-            {getDisplayContent().map((item) => (
-              <TouchableOpacity
-                key={`${item.type}-${item.id}`}
-                style={styles.card}
-                onPress={() => handleContentPress(item)}
-              >
-                <Image source={{ uri: item.image }} style={styles.poster} resizeMode="cover" />
-                <View style={styles.cardInfo}>
-                  <Text style={styles.cardTitle} numberOfLines={2}>
-                    {item.title}
-                  </Text>
-                  <View style={styles.cardMeta}>
-                    <Text style={styles.cardYear}>{item.year}</Text>
-                    <Text style={styles.cardRating}>⭐ {item.rating}</Text>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-          {getDisplayContent().length === 0 && (
+        <FlatList
+          data={getDisplayContent()}
+          renderItem={renderItem}
+          keyExtractor={(item) => `${item.type}-${item.id}`}
+          numColumns={3}
+          contentContainerStyle={styles.flatListContent}
+          columnWrapperStyle={styles.columnWrapper}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>
                 No {selectedTab.toLowerCase()} content available for {franchise}
               </Text>
             </View>
-          )}
-        </ScrollView>
+          }
+          initialNumToRender={9}
+          maxToRenderPerBatch={9}
+          windowSize={5}
+        />
       )}
     </SafeAreaView>
   );
@@ -175,14 +188,12 @@ const styles = StyleSheet.create({
     marginTop: 15,
     fontSize: 16,
   },
-  content: {
-    flex: 1,
-  },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  flatListContent: {
     paddingHorizontal: 15,
     paddingVertical: 10,
+  },
+  columnWrapper: {
+    justifyContent: "flex-start",
   },
   card: {
     width: "31%",

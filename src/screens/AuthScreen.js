@@ -6,18 +6,58 @@ import {
   TouchableOpacity,
   StyleSheet,
   StatusBar,
-  Image,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+} from "firebase/auth";
+import { auth } from "../config/firebase";
 import colors from "../constants/colors";
 
 const AuthScreen = ({ navigation }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSignIn = () => {
-    // Navigate to user profile selection
-    navigation.navigate("UserProfile");
+  const handleAuth = async () => {
+    if (!email || !password) {
+      Alert.alert("Error", "Please enter both email and password.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (isSignUp) {
+        await createUserWithEmailAndPassword(auth, email, password);
+        // Auto-login happens, listener in AppNavigator handles navigation
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+        // Listener in AppNavigator handles navigation
+      }
+    } catch (error) {
+      let errorMessage = "An error occurred.";
+      if (error.code === "auth/invalid-email")
+        errorMessage = "Invalid email address.";
+      if (error.code === "auth/user-disabled")
+        errorMessage = "User account disabled.";
+      if (error.code === "auth/user-not-found")
+        errorMessage = "User not found.";
+      if (error.code === "auth/wrong-password")
+        errorMessage = "Incorrect password.";
+      if (error.code === "auth/email-already-in-use")
+        errorMessage = "Email already in use.";
+      if (error.code === "auth/weak-password")
+        errorMessage = "Password is too weak.";
+
+      Alert.alert("Authentication Error", errorMessage);
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -31,9 +71,13 @@ const AuthScreen = ({ navigation }) => {
 
       {/* Form Container */}
       <View style={styles.formContainer}>
+        <Text style={styles.headerText}>
+          {isSignUp ? "Sign Up" : "Sign In"}
+        </Text>
+
         <TextInput
           style={styles.input}
-          placeholder="Username/Email/Phone"
+          placeholder="Email"
           placeholderTextColor={colors.gray}
           value={email}
           onChangeText={setEmail}
@@ -51,18 +95,34 @@ const AuthScreen = ({ navigation }) => {
           autoCapitalize="none"
         />
 
-        <TouchableOpacity style={styles.signInButton} onPress={handleSignIn}>
-          <Text style={styles.signInButtonText}>Sign In</Text>
+        <TouchableOpacity
+          style={styles.signInButton}
+          onPress={handleAuth}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            <Text style={styles.signInButtonText}>
+              {isSignUp ? "Sign Up" : "Sign In"}
+            </Text>
+          )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.rememberMeContainer}>
-          <Text style={styles.rememberMeText}>Remember me</Text>
-        </TouchableOpacity>
+        {!isSignUp && (
+          <TouchableOpacity style={styles.rememberMeContainer}>
+            <Text style={styles.rememberMeText}>Remember me</Text>
+          </TouchableOpacity>
+        )}
 
         <View style={styles.signUpContainer}>
-          <Text style={styles.signUpText}>New to LeeTV? </Text>
-          <TouchableOpacity>
-            <Text style={styles.signUpLink}>Sign up now</Text>
+          <Text style={styles.signUpText}>
+            {isSignUp ? "Already have an account? " : "New to LeeTV? "}
+          </Text>
+          <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)}>
+            <Text style={styles.signUpLink}>
+              {isSignUp ? "Sign in now" : "Sign up now"}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -86,6 +146,12 @@ const styles = StyleSheet.create({
     color: colors.netflixRed,
     letterSpacing: 6,
     textShadow: "0px 4px 12px rgba(229, 9, 20, 0.5)",
+  },
+  headerText: {
+    color: colors.white,
+    fontSize: 32,
+    fontWeight: "bold",
+    marginBottom: 28,
   },
   formContainer: {
     paddingHorizontal: 40,

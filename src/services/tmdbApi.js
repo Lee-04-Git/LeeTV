@@ -4,15 +4,16 @@ const BASE_URL = "https://api.themoviedb.org/3";
 const IMAGE_BASE_URL = "https://image.tmdb.org/t/p";
 
 // Helper function to build image URLs
-export const getImageUrl = (path, size = "original") => {
-  if (!path) return "https://placehold.co/300x450/2C3E50/FFFFFF?text=No+Image";
+export const getImageUrl = (path, size = "w342") => {
+  if (!path || path === undefined || path === "null")
+    return "https://via.placeholder.com/342x513/2C3E50/FFFFFF?text=No+Image";
   return `${IMAGE_BASE_URL}/${size}${path}`;
 };
 
 // Helper function to build backdrop URLs
-export const getBackdropUrl = (path, size = "original") => {
-  if (!path)
-    return "https://placehold.co/1280x720/2C3E50/FFFFFF?text=No+Backdrop";
+export const getBackdropUrl = (path, size = "w780") => {
+  if (!path || path === undefined || path === "null")
+    return "https://via.placeholder.com/780x439/2C3E50/FFFFFF?text=No+Backdrop";
   return `${IMAGE_BASE_URL}/${size}${path}`;
 };
 
@@ -26,8 +27,8 @@ export const fetchTrending = async (timeWindow = "week") => {
     return data.results.map((item) => ({
       id: item.id,
       title: item.title || item.name,
-      image: getImageUrl(item.poster_path, "w500"),
-      backdrop: getBackdropUrl(item.backdrop_path, "w1280"),
+      image: getImageUrl(item.poster_path, "w342"),
+      backdrop: getBackdropUrl(item.backdrop_path, "w780"),
       rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
       year: item.release_date
         ? new Date(item.release_date).getFullYear()
@@ -53,8 +54,8 @@ export const fetchPopularMovies = async (page = 1) => {
     return data.results.map((movie) => ({
       id: movie.id,
       title: movie.title,
-      image: getImageUrl(movie.poster_path, "w500"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
       rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
       year: movie.release_date
         ? new Date(movie.release_date).getFullYear()
@@ -78,8 +79,8 @@ export const fetchPopularTVShows = async (page = 1) => {
     return data.results.map((show) => ({
       id: show.id,
       title: show.name,
-      image: getImageUrl(show.poster_path, "w500"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
       rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
       year: show.first_air_date
         ? new Date(show.first_air_date).getFullYear()
@@ -103,8 +104,8 @@ export const fetchTopRatedMovies = async (page = 1) => {
     return data.results.map((movie) => ({
       id: movie.id,
       title: movie.title,
-      image: getImageUrl(movie.poster_path, "w500"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
       rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
       year: movie.release_date
         ? new Date(movie.release_date).getFullYear()
@@ -128,8 +129,8 @@ export const fetchTopRatedTVShows = async (page = 1) => {
     return data.results.map((show) => ({
       id: show.id,
       title: show.name,
-      image: getImageUrl(show.poster_path, "w500"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
       rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
       year: show.first_air_date
         ? new Date(show.first_air_date).getFullYear()
@@ -154,8 +155,12 @@ export const fetchMovieDetails = async (movieId) => {
     return {
       id: movie.id,
       title: movie.title,
-      image: getImageUrl(movie.poster_path, "w500"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+      poster_path: movie.poster_path,
+      backdrop_path: movie.backdrop_path,
+      vote_average: movie.vote_average,
+      release_date: movie.release_date,
       rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
       year: movie.release_date
         ? new Date(movie.release_date).getFullYear()
@@ -163,6 +168,7 @@ export const fetchMovieDetails = async (movieId) => {
       releaseDate: movie.release_date,
       runtime: movie.runtime ? `${movie.runtime} min` : "N/A",
       type: "movie",
+      media_type: "movie",
       overview: movie.overview,
       genres: movie.genres?.map((g) => g.name) || [],
       genreIds: movie.genres?.map((g) => g.id) || [],
@@ -198,8 +204,13 @@ export const fetchTVShowDetails = async (showId) => {
     return {
       id: show.id,
       title: show.name,
-      image: getImageUrl(show.poster_path, "w500"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+      name: show.name,
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+      poster_path: show.poster_path,
+      backdrop_path: show.backdrop_path,
+      vote_average: show.vote_average,
+      first_air_date: show.first_air_date,
       rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
       year: show.first_air_date
         ? new Date(show.first_air_date).getFullYear()
@@ -210,6 +221,7 @@ export const fetchTVShowDetails = async (showId) => {
       numberOfEpisodes: show.number_of_episodes,
       status: show.status,
       type: "tv",
+      media_type: "tv",
       overview: show.overview,
       genres: show.genres?.map((g) => g.name) || [],
       genreIds: show.genres?.map((g) => g.id) || [],
@@ -228,7 +240,7 @@ export const fetchTVShowDetails = async (showId) => {
           name: season.name,
           episodeCount: season.episode_count,
           airDate: season.air_date,
-          poster: getImageUrl(season.poster_path, "w500"),
+          poster: getImageUrl(season.poster_path, "w342"),
           overview: season.overview,
         })) || [],
       trailer:
@@ -256,7 +268,7 @@ export const fetchSeasonDetails = async (showId, seasonNumber) => {
       overview: season.overview,
       seasonNumber: season.season_number,
       airDate: season.air_date,
-      poster: getImageUrl(season.poster_path, "w500"),
+      poster: getImageUrl(season.poster_path, "w342"),
       episodes:
         season.episodes?.map((episode) => ({
           id: episode.id,
@@ -291,8 +303,8 @@ export const searchContent = async (query) => {
       .map((item) => ({
         id: item.id,
         title: item.title || item.name,
-        image: getImageUrl(item.poster_path, "w500"),
-        backdrop: getBackdropUrl(item.backdrop_path, "w1280"),
+        image: getImageUrl(item.poster_path, "w342"),
+        backdrop: getBackdropUrl(item.backdrop_path, "w780"),
         rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
         year: item.release_date
           ? new Date(item.release_date).getFullYear()
@@ -318,8 +330,8 @@ export const fetchNowPlayingMovies = async (page = 1) => {
     return data.results.map((movie) => ({
       id: movie.id,
       title: movie.title,
-      image: getImageUrl(movie.poster_path, "w500"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
       rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
       year: movie.release_date
         ? new Date(movie.release_date).getFullYear()
@@ -343,8 +355,8 @@ export const fetchAiringTodayTVShows = async (page = 1) => {
     return data.results.map((show) => ({
       id: show.id,
       title: show.name,
-      image: getImageUrl(show.poster_path, "w500"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
       rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
       year: show.first_air_date
         ? new Date(show.first_air_date).getFullYear()
@@ -368,8 +380,8 @@ export const fetchUpcomingMovies = async (page = 1) => {
     return data.results.map((movie) => ({
       id: movie.id,
       title: movie.title,
-      image: getImageUrl(movie.poster_path, "w500"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
       rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
       year: movie.release_date
         ? new Date(movie.release_date).getFullYear()
@@ -393,8 +405,8 @@ export const fetchOnTheAirTVShows = async (page = 1) => {
     return data.results.map((show) => ({
       id: show.id,
       title: show.name,
-      image: getImageUrl(show.poster_path, "w500"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
       rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
       year: show.first_air_date
         ? new Date(show.first_air_date).getFullYear()
@@ -418,8 +430,8 @@ export const fetchMoviesByGenre = async (genreId, page = 1) => {
     return data.results.map((movie) => ({
       id: movie.id,
       title: movie.title,
-      image: getImageUrl(movie.poster_path, "w500"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
       rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
       year: movie.release_date
         ? new Date(movie.release_date).getFullYear()
@@ -443,8 +455,8 @@ export const fetchTVShowsByGenre = async (genreId, page = 1) => {
     return data.results.map((show) => ({
       id: show.id,
       title: show.name,
-      image: getImageUrl(show.poster_path, "w500"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
       rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
       year: show.first_air_date
         ? new Date(show.first_air_date).getFullYear()
@@ -468,8 +480,8 @@ export const fetchSimilarMovies = async (movieId) => {
     return data.results.slice(0, 15).map((movie) => ({
       id: movie.id,
       title: movie.title,
-      image: getImageUrl(movie.poster_path, "w500"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
       rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
       year: movie.release_date
         ? new Date(movie.release_date).getFullYear()
@@ -493,8 +505,8 @@ export const fetchRecommendedMovies = async (movieId) => {
     return data.results.slice(0, 15).map((movie) => ({
       id: movie.id,
       title: movie.title,
-      image: getImageUrl(movie.poster_path, "w500"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
       rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
       year: movie.release_date
         ? new Date(movie.release_date).getFullYear()
@@ -518,8 +530,8 @@ export const fetchSimilarTVShows = async (showId) => {
     return data.results.slice(0, 15).map((show) => ({
       id: show.id,
       title: show.name,
-      image: getImageUrl(show.poster_path, "w500"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
       rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
       year: show.first_air_date
         ? new Date(show.first_air_date).getFullYear()
@@ -543,8 +555,8 @@ export const fetchRecommendedTVShows = async (showId) => {
     return data.results.slice(0, 15).map((show) => ({
       id: show.id,
       title: show.name,
-      image: getImageUrl(show.poster_path, "w500"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
       rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
       year: show.first_air_date
         ? new Date(show.first_air_date).getFullYear()
@@ -614,8 +626,8 @@ export const fetchAnime = async (page = 1) => {
     return data.results.map((show) => ({
       id: show.id,
       title: show.name,
-      image: getImageUrl(show.poster_path, "w500"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
       rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
       year: show.first_air_date
         ? new Date(show.first_air_date).getFullYear()
@@ -810,7 +822,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.movies,
+          ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
       }
@@ -821,7 +833,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.tv,
+          ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
       }
@@ -859,8 +871,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const movies = uniqueMovies.map((movie) => ({
         id: movie.id,
         title: movie.title,
-        image: getImageUrl(movie.poster_path, "w500"),
-        backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
         rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
         year: movie.release_date
           ? new Date(movie.release_date).getFullYear()
@@ -872,8 +884,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const tvShows = uniqueTVShows.map((show) => ({
         id: show.id,
         title: show.name || show.title,
-        image: getImageUrl(show.poster_path, "w500"),
-        backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
         rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
         year: show.first_air_date
           ? new Date(show.first_air_date).getFullYear()
@@ -973,7 +985,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.movies,
+          ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
       }
@@ -984,7 +996,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.tv,
+          ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
       }
@@ -1020,8 +1032,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const movies = uniqueMovies.map((movie) => ({
         id: movie.id,
         title: movie.title,
-        image: getImageUrl(movie.poster_path, "w500"),
-        backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
         rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
         year: movie.release_date
           ? new Date(movie.release_date).getFullYear()
@@ -1033,8 +1045,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const tvShows = uniqueTVShows.map((show) => ({
         id: show.id,
         title: show.name || show.title,
-        image: getImageUrl(show.poster_path, "w500"),
-        backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
         rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
         year: show.first_air_date
           ? new Date(show.first_air_date).getFullYear()
@@ -1153,7 +1165,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.movies,
+          ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
       }
@@ -1164,7 +1176,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.tv,
+          ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
       }
@@ -1200,8 +1212,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const movies = uniqueMovies.map((movie) => ({
         id: movie.id,
         title: movie.title,
-        image: getImageUrl(movie.poster_path, "w500"),
-        backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
         rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
         year: movie.release_date
           ? new Date(movie.release_date).getFullYear()
@@ -1213,8 +1225,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const tvShows = uniqueTVShows.map((show) => ({
         id: show.id,
         title: show.name || show.title,
-        image: getImageUrl(show.poster_path, "w500"),
-        backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
         rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
         year: show.first_air_date
           ? new Date(show.first_air_date).getFullYear()
@@ -1401,7 +1413,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.movies,
+          ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
       }
@@ -1412,7 +1424,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.tv,
+          ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
       }
@@ -1448,8 +1460,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const movies = uniqueMovies.map((movie) => ({
         id: movie.id,
         title: movie.title,
-        image: getImageUrl(movie.poster_path, "w500"),
-        backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
         rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
         year: movie.release_date
           ? new Date(movie.release_date).getFullYear()
@@ -1461,8 +1473,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const tvShows = uniqueTVShows.map((show) => ({
         id: show.id,
         title: show.name || show.title,
-        image: getImageUrl(show.poster_path, "w500"),
-        backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
         rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
         year: show.first_air_date
           ? new Date(show.first_air_date).getFullYear()
@@ -1676,7 +1688,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.movies,
+          ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
       }
@@ -1687,7 +1699,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.tv,
+          ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
       }
@@ -1723,8 +1735,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const movies = uniqueMovies.map((movie) => ({
         id: movie.id,
         title: movie.title,
-        image: getImageUrl(movie.poster_path, "w500"),
-        backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
         rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
         year: movie.release_date
           ? new Date(movie.release_date).getFullYear()
@@ -1736,8 +1748,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const tvShows = uniqueTVShows.map((show) => ({
         id: show.id,
         title: show.name || show.title,
-        image: getImageUrl(show.poster_path, "w500"),
-        backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
         rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
         year: show.first_air_date
           ? new Date(show.first_air_date).getFullYear()
@@ -1867,7 +1879,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.movies,
+          ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
       }
@@ -1878,7 +1890,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.tv,
+          ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
       }
@@ -1914,8 +1926,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const movies = uniqueMovies.map((movie) => ({
         id: movie.id,
         title: movie.title,
-        image: getImageUrl(movie.poster_path, "w500"),
-        backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
         rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
         year: movie.release_date
           ? new Date(movie.release_date).getFullYear()
@@ -1927,8 +1939,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const tvShows = uniqueTVShows.map((show) => ({
         id: show.id,
         title: show.name || show.title,
-        image: getImageUrl(show.poster_path, "w500"),
-        backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
         rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
         year: show.first_air_date
           ? new Date(show.first_air_date).getFullYear()
@@ -2006,7 +2018,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.movies,
+          ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
       }
@@ -2017,7 +2029,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
-          ...config.tv,
+          ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
       }
@@ -2050,8 +2062,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const movies = uniqueMovies.map((movie) => ({
         id: movie.id,
         title: movie.title,
-        image: getImageUrl(movie.poster_path, "w500"),
-        backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
         rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
         year: movie.release_date
           ? new Date(movie.release_date).getFullYear()
@@ -2063,8 +2075,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const tvShows = uniqueTVShows.map((show) => ({
         id: show.id,
         title: show.name || show.title,
-        image: getImageUrl(show.poster_path, "w500"),
-        backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
         rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
         year: show.first_air_date
           ? new Date(show.first_air_date).getFullYear()
@@ -2184,8 +2196,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const movies = uniqueMovies.map((movie) => ({
         id: movie.id,
         title: movie.title,
-        image: getImageUrl(movie.poster_path, "w500"),
-        backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
         rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
         year: movie.release_date
           ? new Date(movie.release_date).getFullYear()
@@ -2197,8 +2209,8 @@ export const fetchFranchiseContent = async (franchise) => {
       const tvShows = uniqueTVShows.map((show) => ({
         id: show.id,
         title: show.name || show.title,
-        image: getImageUrl(show.poster_path, "w500"),
-        backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
         rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
         year: show.first_air_date
           ? new Date(show.first_air_date).getFullYear()
@@ -2220,7 +2232,7 @@ export const fetchFranchiseContent = async (franchise) => {
         api_key: API_KEY,
         page: page,
         sort_by: "popularity.desc",
-        ...config.movies,
+        ...(config?.movies || {}),
       });
       moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
     }
@@ -2232,7 +2244,7 @@ export const fetchFranchiseContent = async (franchise) => {
         api_key: API_KEY,
         page: page,
         sort_by: "popularity.desc",
-        ...config.tv,
+        ...(config?.tv || {}),
       });
       tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
     }
@@ -2253,8 +2265,8 @@ export const fetchFranchiseContent = async (franchise) => {
     const movies = allMovieResults.map((movie) => ({
       id: movie.id,
       title: movie.title,
-      image: getImageUrl(movie.poster_path, "w500"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w1280"),
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
       rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
       year: movie.release_date
         ? new Date(movie.release_date).getFullYear()
@@ -2266,8 +2278,8 @@ export const fetchFranchiseContent = async (franchise) => {
     const tvShows = allTVResults.map((show) => ({
       id: show.id,
       title: show.name,
-      image: getImageUrl(show.poster_path, "w500"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w1280"),
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
       rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
       year: show.first_air_date
         ? new Date(show.first_air_date).getFullYear()
@@ -2278,7 +2290,11 @@ export const fetchFranchiseContent = async (franchise) => {
 
     return { movies, tvShows };
   } catch (error) {
-    console.error("Error fetching franchise content:", error);
+    console.error(
+      "Error fetching franchise content franchise:",
+      franchise,
+      error
+    );
     return { movies: [], tvShows: [] };
   }
 };

@@ -29,12 +29,9 @@ const SearchScreen = ({ navigation }) => {
   const [popularContent, setPopularContent] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [allContent, setAllContent] = useState([]);
-  const [loadingData, setLoadingData] = useState(true);
 
   useEffect(() => {
     loadPopularContent();
-    loadAllContent();
   }, []);
 
   useEffect(() => {
@@ -59,38 +56,12 @@ const SearchScreen = ({ navigation }) => {
     }
   };
 
-  const loadAllContent = async () => {
-    try {
-      setLoadingData(true);
-      const [movies, tvShows] = await Promise.all([
-        fetchAllMovies(20), // 400 movies
-        fetchAllTVShows(20), // 400 TV shows
-      ]);
-      setAllContent([...movies, ...tvShows]);
-    } catch (error) {
-      console.error("Error loading all content:", error);
-    } finally {
-      setLoadingData(false);
-    }
-  };
-
   const performSearch = async () => {
     try {
       setLoading(true);
       setSearched(true);
-
-      // Use local filtering if data is loaded, otherwise use API
-      if (allContent.length > 0) {
-        const query = searchQuery.toLowerCase().trim();
-        const filtered = allContent.filter((item) =>
-          item.title.toLowerCase().includes(query)
-        );
-        setSearchResults(filtered.slice(0, 50)); // Limit to 50 results for performance
-      } else {
-        // Fallback to API search
-        const results = await searchContent(searchQuery);
-        setSearchResults(results);
-      }
+      const results = await searchContent(searchQuery);
+      setSearchResults(results);
     } catch (error) {
       console.error("Error searching:", error);
     } finally {
