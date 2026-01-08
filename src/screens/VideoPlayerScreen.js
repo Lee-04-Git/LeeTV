@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -6,18 +6,14 @@ import {
   Text,
   StatusBar,
   Platform,
-  TouchableWithoutFeedback,
   BackHandler,
-  ActivityIndicator,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import colors from "../constants/colors";
 import * as ScreenOrientation from "expo-screen-orientation";
 import * as NavigationBar from "expo-navigation-bar";
 import { FullscreenIcon } from "../components/Icons";
-import { saveWatchProgress } from "../services/supabaseService";
+import { saveWatchProgress, getWatchProgress } from "../services/supabaseService";
 
-// Conditionally import WebView only for mobile
 let WebView = null;
 if (Platform.OS !== "web") {
   WebView = require("react-native-webview").WebView;
@@ -31,526 +27,290 @@ const VideoPlayerScreen = ({ navigation, route }) => {
   const season = params.season || 1;
   const episode = params.episode || 1;
 
-  const [error, setError] = useState(null);
-  const [showControls, setShowControls] = useState(false);
-  const controlsTimeout = useRef(null);
+  const [videoUrl, setVideoUrl] = useState("");
+  const [initialTime, setInitialTime] = useState(0);
+  const [isReady, setIsReady] = useState(false);
+
   const webViewRef = useRef(null);
-  const watchHistorySavedRef = useRef(false);
   const progressIntervalRef = useRef(null);
   const currentTimeRef = useRef(0);
-  const [videoUrl, setVideoUrl] = useState("");
+  const durationRef = useRef(0);
 
-  // Storage key for this specific video
-  const getStorageKey = () => {
-    if (mediaType === "tv") {
-      return `vidrock_progress_${mediaId}_S${season}E${episode}`;
+  const getStorageKey = useCallback(() => {
+    return mediaType === "tv"
+      ? `vidrock_${mediaId}_S${season}E${episode}`
+      : `vidrock_${mediaId}`;
+  }, [mediaId, mediaType, season, episode]);
+
+  const loadProgress = async () => {
+    let savedTime = 0;
+    try {
+      const supabaseProgress = await getWatchProgress(mediaId, mediaType, season, episode);
+      if (supabaseProgress?.progress_seconds > 10) {
+        savedTime = supabaseProgress.progress_seconds;
+        if (supabaseProgress.duration_seconds > 0) {
+          const pct = (savedTime / supabaseProgress.duration_seconds) * 100;
+          if (pct > 95) savedTime = 0;
+        }
+      }
+      if (savedTime === 0) {
+        const local = await AsyncStorage.getItem(getStorageKey());
+        if (local) {
+          const parsed = JSON.parse(local);
+          if (parsed.currentTime > 10) savedTime = parsed.currentTime;
+        }
+      }
+    } catch (e) {
+      console.log("Load progress error:", e);
     }
-    return `vidrock_progress_${mediaId}`;
+    return savedTime;
   };
 
-  // Save current progress to AsyncStorage
-  const saveProgress = async (seconds) => {
-    if (seconds < 5) return; // Don't save if barely watched
+  const saveProgress = async (seconds, duration) => {
+    if (!seconds || seconds < 10) return;
+    if (duration > 0 && (seconds / duration) > 0.98) return;
+
     try {
-      const key = getStorageKey();
-      await AsyncStorage.setItem(key, JSON.stringify({
+      await AsyncStorage.setItem(getStorageKey(), JSON.stringify({
         currentTime: Math.floor(seconds),
         timestamp: Date.now(),
       }));
-      console.log(`Progress saved: ${Math.floor(seconds)}s`);
-    } catch (error) {
-      console.error("Error saving progress:", error);
-    }
-  };
-
-  // Load saved progress from AsyncStorage
-  const loadProgress = async () => {
-    try {
-      const key = getStorageKey();
-      const data = await AsyncStorage.getItem(key);
-      if (data) {
-        const parsed = JSON.parse(data);
-        console.log(`Loaded saved progress: ${parsed.currentTime}s`);
-        return parsed.currentTime || 0;
-      }
-    } catch (error) {
-      console.error("Error loading progress:", error);
-    }
-    return 0;
-  };
-
-  // Construct the video URL with resume time parameter
-  const buildVideoUrl = async () => {
-    let url =
-      mediaType === "tv"
-        ? `https://vidrock.net/tv/${mediaId}/${season}/${episode}`
-        : `https://vidrock.net/movie/${mediaId}`;
-
-    // VidRock params - autoplay, no download button, explicitly unmuted
-    const params = ["autoplay=1", "download=false", "muted=0"];
-    if (mediaType === "tv") {
-      params.push("autonext=1");
-    }
-
-    // VidRock uses its own localStorage to remember position - it will auto-resume
-    // We track progress separately for Continue Watching display
-    const savedTime = await loadProgress();
-    if (savedTime > 10) {
-      console.log(`VidRock will auto-resume from last position (we tracked ${savedTime}s)`);
-    }
-
-    return url + "?" + params.join("&");
-  };
-
-  // Build video URL on mount
-  useEffect(() => {
-    buildVideoUrl().then(setVideoUrl);
-  }, []);
-
-  // Save to watch history for continue watching
-  const saveToWatchHistory = async () => {
-    if (watchHistorySavedRef.current) return;
-    
-    try {
       await saveWatchProgress({
         media_id: mediaId,
         media_type: mediaType,
-        title: title,
+        title,
         poster_path: params.poster_path || null,
         backdrop_path: params.backdrop_path || null,
         season_number: mediaType === "tv" ? season : null,
         episode_number: mediaType === "tv" ? episode : null,
-        episode_title: mediaType === "tv" ? params.episodeTitle : null,
-        progress_seconds: 0, // VidRock localStorage handles actual progress
-        duration_seconds: mediaType === "tv" ? 2400 : 6000,
+        episode_title: params.episodeTitle || null,
+        progress_seconds: Math.floor(seconds),
+        duration_seconds: Math.floor(duration) || (mediaType === "tv" ? 2400 : 7200),
       });
-      watchHistorySavedRef.current = true;
-      console.log(`Added to watch history: ${title} ${mediaType === "tv" ? `S${season}E${episode}` : ""}`);
-    } catch (error) {
-      console.error("Failed to save watch history:", error);
-    }
+    } catch (e) {}
   };
 
   useEffect(() => {
-    // VidRock localStorage automatically handles resume - no need to track ourselves
+    const init = async () => {
+      const savedTime = await loadProgress();
+      setInitialTime(savedTime);
+      currentTimeRef.current = savedTime;
 
-    // Allow auto-rotation on mobile
-    if (Platform.OS !== "web") {
-      ScreenOrientation.unlockAsync();
-    }
+      let url = mediaType === "tv"
+        ? `https://vidrock.net/tv/${mediaId}/${season}/${episode}`
+        : `https://vidrock.net/movie/${mediaId}`;
 
-    // Hide navigation bar on Android
+      const q = ["autoplay=1", "download=false", "muted=0"];
+      if (mediaType === "tv") q.push("autonext=1");
+      if (savedTime > 10) q.push(`t=${Math.floor(savedTime)}`);
+
+      setVideoUrl(url + "?" + q.join("&"));
+      setIsReady(true);
+    };
+    init();
+
+    if (Platform.OS !== "web") ScreenOrientation.unlockAsync();
     if (Platform.OS === "android") {
       NavigationBar.setVisibilityAsync("hidden");
       NavigationBar.setBehaviorAsync("overlay-swipe");
     }
 
-    // Handle Android back button
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => {
-        navigation.goBack();
-        return true;
-      }
-    );
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
+      saveProgress(currentTimeRef.current, durationRef.current);
+      navigation.goBack();
+      return true;
+    });
 
-    // Save to watch history after 5 seconds (for continue watching list)
-    const watchHistoryTimer = setTimeout(() => {
-      saveToWatchHistory();
-    }, 5000);
-
-    // Track progress - save every 10 seconds
     progressIntervalRef.current = setInterval(() => {
-      saveProgress(currentTimeRef.current);
+      saveProgress(currentTimeRef.current, durationRef.current);
     }, 10000);
 
     return () => {
       backHandler.remove();
-      clearTimeout(watchHistoryTimer);
-      if (progressIntervalRef.current) {
-        clearInterval(progressIntervalRef.current);
-      }
-      // Save final progress on exit
-      saveProgress(currentTimeRef.current);
-      // Lock back to portrait when leaving
+      clearInterval(progressIntervalRef.current);
+      saveProgress(currentTimeRef.current, durationRef.current);
       if (Platform.OS !== "web") {
-        ScreenOrientation.lockAsync(
-          ScreenOrientation.OrientationLock.PORTRAIT_UP
-        );
+        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
       }
-      // Show navigation bar again on Android
       if (Platform.OS === "android") {
         NavigationBar.setVisibilityAsync("visible");
       }
     };
   }, []);
 
-  const handleOrientationToggle = async () => {
+  const toggleOrientation = async () => {
     if (Platform.OS === "web") return;
-
-    const orientation = await ScreenOrientation.getOrientationAsync();
-    if (
-      orientation === ScreenOrientation.Orientation.PORTRAIT_UP ||
-      orientation === ScreenOrientation.Orientation.PORTRAIT_DOWN
-    ) {
-      await ScreenOrientation.lockAsync(
-        ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT
-      );
+    const o = await ScreenOrientation.getOrientationAsync();
+    if (o <= 2) {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
     } else {
-      await ScreenOrientation.lockAsync(
-        ScreenOrientation.OrientationLock.PORTRAIT_UP
-      );
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     }
   };
 
-  // Auto-hide controls
-  useEffect(() => {
-    if (showControls) {
-      if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
-      controlsTimeout.current = setTimeout(() => {
-        setShowControls(false);
-      }, 4000);
-    }
-    return () => {
-      if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
-    };
-  }, [showControls]);
-
-  const handleBack = () => {
-    navigation.goBack();
+  const handleMessage = (e) => {
+    try {
+      const data = JSON.parse(e.nativeEvent.data);
+      if (data.type === "progress") {
+        if (data.currentTime > 0) currentTimeRef.current = data.currentTime;
+        if (data.duration > 0) durationRef.current = data.duration;
+      }
+    } catch (err) {}
   };
 
-  const toggleControls = () => setShowControls(!showControls);
-
-  const handleRetry = () => {
-    setError(null);
-    if (webViewRef.current) {
-      webViewRef.current.reload();
-    }
-  };
-
-  // Early return only if no mediaId
-  if (!mediaId) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>
-            Unable to load video. Missing media ID.
-          </Text>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Text style={styles.backButtonText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  // Show loading while videoUrl is being built
-  if (!videoUrl) {
-    return (
-      <View style={styles.container}>
-        <StatusBar hidden />
-        <View style={styles.errorContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.errorText, { marginTop: 20 }]}>
-            Loading video...
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  // Render for Web
-  if (Platform.OS === "web") {
-    return (
-      <View style={styles.container}>
-        <StatusBar hidden />
-        <View style={styles.videoWrapper}>
-          <iframe
-            src={videoUrl}
-            style={{
-              width: "100%",
-              height: "100%",
-              border: "none",
-              position: "absolute",
-              top: 0,
-              left: 0,
-            }}
-            allowFullScreen
-            allow="autoplay; fullscreen; encrypted-media"
-          />
-          <TouchableOpacity
-            onPress={handleBack}
-            style={[
-              styles.backBtn,
-              { position: "absolute", top: 20, left: 20, zIndex: 100 },
-            ]}
-          >
-            <Text style={styles.backIcon}>←</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  // HTML for WebView - VidRock player handles everything via localStorage
   const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { width: 100%; height: 100%; background-color: #000; overflow: hidden; }
-        iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
-        [id*="ad"], [class*="ad"], [id*="banner"], [class*="banner"], [id*="popup"], [class*="popup"] {
-          display: none !important;
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{width:100%;height:100%;background:#000;overflow:hidden}
+    iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:none}
+  </style>
+</head>
+<body>
+  <iframe src="${videoUrl}" id="player" allowfullscreen allow="autoplay;fullscreen;encrypted-media"></iframe>
+  <script>
+    const resumeTime = ${initialTime};
+    let resumed = false;
+    let video = null;
+
+    function findVideo(doc) {
+      if (!doc) return null;
+      try {
+        let v = doc.querySelector('video');
+        if (v) return v;
+        const frames = doc.querySelectorAll('iframe');
+        for (let f of frames) {
+          try {
+            v = findVideo(f.contentDocument || f.contentWindow.document);
+            if (v) return v;
+          } catch(e) {}
         }
-      </style>
-    </head>
-    <body>
-      <iframe 
-        src="${videoUrl}"
-        id="videoFrame"
-        allowfullscreen
-        allow="autoplay; fullscreen; encrypted-media; picture-in-picture; accelerometer; gyroscope"
-        referrerpolicy="origin"
-      ></iframe>
+      } catch(e) {}
+      return null;
+    }
+
+    setInterval(() => {
+      if (!video) {
+        video = findVideo(document);
+        const frame = document.getElementById('player');
+        if (!video && frame) {
+          try { video = findVideo(frame.contentDocument || frame.contentWindow.document); } catch(e) {}
+        }
+      }
       
-      <script>
-        // Block ads and popups only
-        window.open = function() { return null; };
-        window.alert = function() {};
-        
-        // Remove ads periodically
-        setInterval(() => {
-          document.querySelectorAll('[id*="banner"], [class*="banner"], [id*="popup"], [class*="popup"]').forEach(el => el.remove());
-        }, 3000);
-      </script>
-    </body>
-    </html>
-  `;
+      if (video) {
+        if (!resumed && resumeTime > 10 && video.readyState >= 2) {
+          video.currentTime = resumeTime;
+          resumed = true;
+          video.play().catch(() => {});
+        }
+        if (video.currentTime > 0) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'progress',
+            currentTime: Math.floor(video.currentTime),
+            duration: Math.floor(video.duration || 0)
+          }));
+        }
+      }
+    }, 1500);
+
+    window.open = () => null;
+  </script>
+</body>
+</html>`;
+
+  if (!isReady || !videoUrl) {
+    return (
+      <View style={styles.container}>
+        <StatusBar hidden />
+        <View style={styles.loading}>
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <StatusBar hidden />
+      
+      {/* WebView takes full screen - no touch interceptors */}
+      <WebView
+        ref={webViewRef}
+        source={{ html: htmlContent, baseUrl: "https://vidrock.net" }}
+        style={styles.video}
+        allowsFullscreenVideo
+        allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction={false}
+        javaScriptEnabled
+        domStorageEnabled
+        sharedCookiesEnabled
+        thirdPartyCookiesEnabled
+        cacheEnabled
+        incognito={false}
+        mixedContentMode="always"
+        originWhitelist={["*"]}
+        onMessage={handleMessage}
+      />
 
-      <TouchableWithoutFeedback onPress={toggleControls}>
-        <View style={styles.videoWrapper}>
-          <WebView
-            ref={webViewRef}
-            source={{ html: htmlContent, baseUrl: "https://vidrock.net" }}
-            style={styles.video}
-            allowsFullscreenVideo={true}
-            allowsInlineMediaPlayback={true}
-            mediaPlaybackRequiresUserAction={false}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            androidLayerType="hardware"
-            androidHardwareAccelerationDisabled={false}
-            onError={(e) => setError(e.nativeEvent.description)}
-            mixedContentMode="always"
-            originWhitelist={["*"]}
-            setSupportMultipleWindows={false}
-            javaScriptCanOpenWindowsAutomatically={false}
-            nestedScrollEnabled={true}
-            allowsProtectedMedia={true}
-            sharedCookiesEnabled={true}
-            thirdPartyCookiesEnabled={true}
-            cacheEnabled={true}
-            cacheMode="LOAD_DEFAULT"
-            incognito={false}
-            startInLoadingState={false}
-            onMessage={(event) => {
-              try {
-                const data = JSON.parse(event.nativeEvent.data);
-                if (data.type === 'progress' && data.currentTime) {
-                  currentTimeRef.current = data.currentTime;
-                }
-              } catch (error) {
-                // Ignore parse errors
-              }
-            }}
-            onShouldStartLoadWithRequest={(request) => {
-              const url = request.url.toLowerCase();
-              const adPatterns = [
-                "doubleclick",
-                "googlesyndication",
-                "ads.",
-                "/ads/",
-                "popads",
-                "adnxs",
-                "advertising",
-                "taboola",
-                "outbrain",
-              ];
-
-              const allowedDomains = [
-                "vidrock.net",
-                "vidsrc.net",
-                "vidrock",
-                "image.tmdb.org",
-                "about:blank",
-              ];
-              const isAllowed = allowedDomains.some((domain) =>
-                url.includes(domain)
-              );
-
-              if (isAllowed) return true;
-              if (url === videoUrl.toLowerCase() || url === "about:blank")
-                return true;
-
-              for (const pattern of adPatterns) {
-                if (url.includes(pattern)) {
-                  return false;
-                }
-              }
-
-              return true;
-            }}
-          />
-
-          {showControls && (
-            <View style={styles.controlsOverlay}>
-              <View style={styles.topBar}>
-                <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-                  <Text style={styles.backIcon}>←</Text>
-                </TouchableOpacity>
-                <View style={styles.titleContainer}>
-                  <Text style={styles.videoTitle} numberOfLines={1}>
-                    {title}
-                  </Text>
-                  {mediaType === "tv" && (
-                    <Text style={styles.episodeInfo}>
-                      Season {season} • Episode {episode}
-                    </Text>
-                  )}
-                </View>
-                <TouchableOpacity
-                  onPress={handleOrientationToggle}
-                  style={[styles.backBtn, { marginLeft: 15 }]}
-                >
-                  <FullscreenIcon size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {error && (
-            <View style={styles.errorOverlay}>
-              <Text style={styles.errorText}>Failed to load video</Text>
-              <TouchableOpacity
-                style={styles.retryButton}
-                onPress={handleRetry}
-              >
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
+      {/* Floating controls - only at top, doesn't block video */}
+      <View style={styles.topControls} pointerEvents="box-none">
+        <TouchableOpacity
+          onPress={() => {
+            saveProgress(currentTimeRef.current, durationRef.current);
+            navigation.goBack();
+          }}
+          style={styles.btn}
+        >
+          <Text style={styles.btnText}>←</Text>
+        </TouchableOpacity>
+        
+        <View style={styles.titleBox}>
+          <Text style={styles.title} numberOfLines={1}>{title}</Text>
+          {mediaType === "tv" && (
+            <Text style={styles.episode}>S{season} E{episode}</Text>
           )}
         </View>
-      </TouchableWithoutFeedback>
+        
+        <TouchableOpacity onPress={toggleOrientation} style={styles.btn}>
+          <FullscreenIcon size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  videoWrapper: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  video: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  controlsOverlay: {
+  container: { flex: 1, backgroundColor: "#000" },
+  video: { flex: 1, backgroundColor: "#000" },
+  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { color: "#fff", fontSize: 16 },
+  topControls: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    paddingTop: Platform.OS === "ios" ? 50 : 20,
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  topBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 15,
+    padding: 16,
+    paddingTop: Platform.OS === "ios" ? 50 : 30,
+    backgroundColor: "rgba(0,0,0,0.4)",
   },
-  backBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.2)",
+  btn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.25)",
     justifyContent: "center",
     alignItems: "center",
   },
-  backIcon: {
-    color: "#fff",
-    fontSize: 22,
-    fontWeight: "bold",
-  },
-  titleContainer: {
-    flex: 1,
-    marginLeft: 15,
-  },
-  videoTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  episodeInfo: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 14,
-    marginTop: 2,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  errorText: {
-    color: "#fff",
-    fontSize: 18,
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  errorOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.9)",
-  },
-  backButton: {
-    backgroundColor: colors.primary || "#E50914",
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  retryButton: {
-    backgroundColor: colors.primary || "#E50914",
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  btnText: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  titleBox: { flex: 1, marginHorizontal: 12 },
+  title: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  episode: { color: "rgba(255,255,255,0.7)", fontSize: 12, marginTop: 2 },
 });
 
 export default VideoPlayerScreen;
