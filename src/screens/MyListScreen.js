@@ -26,6 +26,8 @@ import {
   getUserList,
   removeFromList,
   getContinueWatching,
+  clearAllWatchHistory,
+  clearUserList,
 } from "../services/supabaseService";
 
 const { width } = Dimensions.get("window");
@@ -50,34 +52,23 @@ const getImageUrl = (posterPath) => {
 };
 
 const MyListScreen = ({ navigation }) => {
-  const [selectedTab, setSelectedTab] = useState("Movies");
   const [myList, setMyList] = useState([]);
   const [continueWatching, setContinueWatching] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Load data when screen is focused
   useFocusEffect(
     useCallback(() => {
-      loadList();
-      loadContinueWatching();
-    }, [selectedTab])
+      loadContinueWatching(); // Load all content
+      loadList(); // Load all items
+    }, [])
   );
 
   const loadList = async () => {
     try {
       setLoading(true);
       const list = await getUserList();
-      console.log("========== MY LIST DATA ==========");
-      console.log("Total items loaded:", list.length);
-      list.forEach((item, index) => {
-        console.log(`Item ${index + 1}:`, {
-          title: item.title,
-          media_type: item.media_type,
-          poster_path: item.poster_path,
-          media_id: item.media_id,
-        });
-      });
-      console.log("==================================");
       setMyList(list);
     } catch (error) {
       console.error("Error loading list:", error);
@@ -88,19 +79,30 @@ const MyListScreen = ({ navigation }) => {
 
   const loadContinueWatching = async () => {
     try {
-      // Filter by media type based on selected tab
-      const mediaType = selectedTab === "Movies" ? "movie" : "tv";
-
-      // Load from Supabase (cloud database)
-      const watching = await getContinueWatching(mediaType);
-
-      console.log(
-        `Loaded ${watching.length} continue watching items from Supabase for ${mediaType}`
-      );
+      // Load ALL continue watching (both movies and TV shows) in order of most recent
+      const watching = await getContinueWatching(null);
       setContinueWatching(watching);
     } catch (error) {
       console.error("Error loading continue watching:", error);
       setContinueWatching([]);
+    }
+  };
+
+  const handleClearContinueWatching = async () => {
+    try {
+      await clearAllWatchHistory();
+      setContinueWatching([]);
+    } catch (error) {
+      console.error("Error clearing continue watching:", error);
+    }
+  };
+
+  const handleClearMyList = async () => {
+    try {
+      await clearUserList();
+      setMyList([]);
+    } catch (error) {
+      console.error("Error clearing my list:", error);
     }
   };
 
@@ -124,13 +126,6 @@ const MyListScreen = ({ navigation }) => {
     }
   };
 
-  // Filter content by selected tab
-  const displayedContent = myList.filter((item) =>
-    selectedTab === "Movies"
-      ? item.media_type === "movie"
-      : item.media_type === "tv"
-  );
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" />
@@ -145,51 +140,21 @@ const MyListScreen = ({ navigation }) => {
           />
         }
       >
-        {/* Header with Gradient Background */}
-        <LinearGradient
-          colors={[
-            "rgba(0, 0, 0, 0.95)",
-            "rgba(0, 0, 0, 0.5)",
-            "rgba(0, 0, 0, 0)",
-          ]}
-          style={styles.headerGradient}
-        >
-          <View style={styles.headerContainer}>
-            <TouchableOpacity
-              style={styles.backButtonContainer}
-              onPress={() => navigation.goBack()}
-            >
-              <Text style={styles.backButton}>←</Text>
-            </TouchableOpacity>
-            <View style={styles.headerTextContainer}>
-              <Text style={styles.title}>My List</Text>
-              <Text style={styles.subtitle}>
-                {myList.length} {myList.length === 1 ? "title" : "titles"} saved
-              </Text>
-            </View>
+        {/* Header */}
+        <View style={styles.headerContainer}>
+          <TouchableOpacity
+            style={styles.backButtonContainer}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.backButton}>←</Text>
+          </TouchableOpacity>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.title}>My List</Text>
+            <Text style={styles.subtitle}>
+              {myList.length} {myList.length === 1 ? "title" : "titles"} saved
+            </Text>
           </View>
-
-          {/* Premium Tab System */}
-          <View style={styles.tabContainer}>
-            {["Movies", "TV Shows"].map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                style={[styles.tab, selectedTab === tab && styles.activeTab]}
-                onPress={() => setSelectedTab(tab)}
-              >
-                <Text
-                  style={[
-                    styles.tabText,
-                    selectedTab === tab && styles.activeTabText,
-                  ]}
-                >
-                  {tab}
-                </Text>
-                {selectedTab === tab && <View style={styles.tabIndicator} />}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </LinearGradient>
+        </View>
 
         {/* Loading State */}
         {loading && (
@@ -198,33 +163,102 @@ const MyListScreen = ({ navigation }) => {
           </View>
         )}
 
+        {/* My List Section */}
+        {!loading && myList.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>My List</Text>
+              <TouchableOpacity onPress={handleClearMyList}>
+                <Text style={styles.clearButton}>Clear All</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.horizontalScroll}
+            >
+              {myList.map((item) => {
+                const posterUrl = getImageUrl(item.poster_path);
+
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.horizontalCard}
+                    onPress={() =>
+                      navigation.navigate("ShowDetails", {
+                        show: {
+                          id: item.media_id,
+                          title: item.title,
+                          name: item.title,
+                          poster_path: item.poster_path,
+                          backdrop_path: item.backdrop_path,
+                          vote_average: item.vote_average,
+                          release_date: item.release_date,
+                          type: item.media_type,
+                          media_type: item.media_type,
+                        },
+                      })
+                    }
+                  >
+                    <Image
+                      source={{ uri: posterUrl }}
+                      style={styles.horizontalImage}
+                      resizeMode="cover"
+                    />
+                    <TouchableOpacity
+                      style={styles.removeButton}
+                      onPress={() => handleRemove(item.media_id, item.media_type)}
+                    >
+                      <CheckIcon size={14} color={colors.white} />
+                    </TouchableOpacity>
+                    <Text style={styles.horizontalTitle} numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    {item.vote_average && (
+                      <View style={styles.ratingRow}>
+                        <StarIcon size={10} color="#FFD700" />
+                        <Text style={styles.ratingText}>
+                          {item.vote_average.toFixed(1)}
+                        </Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
         {/* Continue Watching Section */}
         {!loading && continueWatching.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Continue Watching</Text>
-              <Text style={styles.sectionCount}>{continueWatching.length}</Text>
+              <TouchableOpacity onPress={handleClearContinueWatching}>
+                <Text style={styles.clearButton}>Clear All</Text>
+              </TouchableOpacity>
             </View>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              style={styles.horizontalList}
-              contentContainerStyle={{ paddingRight: 20 }}
+              contentContainerStyle={styles.horizontalScroll}
             >
               {continueWatching.map((item, index) => {
                 const posterUrl = getImageUrl(item.poster_path);
+<<<<<<< HEAD
 
                 // Use Supabase row ID for truly unique key
+=======
+                const progressPercent = item.progress_percentage || 0;
+>>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
                 const uniqueKey = item.id
                   ? `cw-${item.id}`
-                  : item.media_type === "tv"
-                  ? `tv-${item.media_id}-s${item.season_number}-e${item.episode_number}-${index}`
-                  : `movie-${item.media_id}-${index}`;
+                  : `${item.media_type}-${item.media_id}-${index}`;
 
                 return (
                   <TouchableOpacity
                     key={uniqueKey}
-                    style={styles.continueCard}
+                    style={styles.horizontalCard}
                     onPress={() => {
                       if (item.media_type === "tv") {
                         navigation.navigate("VideoPlayer", {
@@ -247,14 +281,23 @@ const MyListScreen = ({ navigation }) => {
                         });
                       }
                     }}
-                    activeOpacity={0.9}
                   >
-                    <View style={styles.continueImageContainer}>
-                      <Image
-                        source={{ uri: posterUrl }}
-                        style={styles.continueImage}
-                        resizeMode="cover"
+                    <Image
+                      source={{ uri: posterUrl }}
+                      style={styles.horizontalImage}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.playIconOverlay}>
+                      <PlayIcon size={30} color={colors.white} />
+                    </View>
+                    <View style={styles.progressBarContainer}>
+                      <View
+                        style={[
+                          styles.progressBar,
+                          { width: `${Math.min(progressPercent, 100)}%` },
+                        ]}
                       />
+<<<<<<< HEAD
 
                       {/* Dark overlay with gradient */}
                       <LinearGradient
@@ -276,18 +319,17 @@ const MyListScreen = ({ navigation }) => {
                           <PlayIcon size={26} color={colors.black} />
                         </View>
                       </View>
+=======
+>>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
                     </View>
-
-                    <View style={styles.continueInfo}>
-                      <Text style={styles.continueTitle} numberOfLines={1}>
-                        {item.title}
+                    <Text style={styles.horizontalTitle} numberOfLines={1}>
+                      {item.title}
+                    </Text>
+                    {item.media_type === "tv" && (
+                      <Text style={styles.episodeText}>
+                        S{item.season_number} E{item.episode_number}
                       </Text>
-                      {item.media_type === "tv" && item.episode_title && (
-                        <Text style={styles.continueEpisode} numberOfLines={1}>
-                          {item.episode_title}
-                        </Text>
-                      )}
-                    </View>
+                    )}
                   </TouchableOpacity>
                 );
               })}
@@ -296,142 +338,15 @@ const MyListScreen = ({ navigation }) => {
         )}
 
         {/* Empty State */}
-        {!loading &&
-          displayedContent.length === 0 &&
-          continueWatching.length === 0 && (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>
-                No {selectedTab.toLowerCase()} in your list yet
-              </Text>
-              <Text style={styles.emptySubtext}>
-                Add some from the home screen!
-              </Text>
-            </View>
-          )}
-
-        {/* My List Grid Section */}
-        {!loading && displayedContent.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>
-                My {selectedTab === "Movies" ? "Movies" : "TV Shows"}
-              </Text>
-              <Text style={styles.sectionCount}>{displayedContent.length}</Text>
-            </View>
-
-            {displayedContent.length === 0 ? (
-              <View style={styles.emptySection}>
-                <View style={styles.emptyIconContainer}>
-                  <CheckIcon size={44} color={colors.gray} />
-                </View>
-                <Text style={styles.emptyText}>
-                  No {selectedTab === "Movies" ? "movies" : "shows"} yet
-                </Text>
-                <Text style={styles.emptySubtext}>
-                  Start adding {selectedTab === "Movies" ? "movies" : "shows"}{" "}
-                  to build your collection
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.gridContainer}>
-                {displayedContent.map((item) => {
-                  const posterUrl = getImageUrl(item.poster_path);
-
-                  console.log(
-                    "Item:",
-                    item.title,
-                    "poster_path:",
-                    item.poster_path,
-                    "Full URL:",
-                    posterUrl
-                  );
-
-                  return (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.card}
-                      onPress={() =>
-                        navigation.navigate("ShowDetails", {
-                          show: {
-                            id: item.media_id,
-                            title: item.title,
-                            name: item.title,
-                            poster_path: item.poster_path,
-                            backdrop_path: item.backdrop_path,
-                            vote_average: item.vote_average,
-                            release_date: item.release_date,
-                            type: item.media_type,
-                            media_type: item.media_type,
-                          },
-                        })
-                      }
-                      activeOpacity={0.9}
-                    >
-                      <View style={styles.cardImageContainer}>
-                        <Image
-                          source={{ uri: posterUrl }}
-                          style={styles.image}
-                          resizeMode="cover"
-                          onError={(e) =>
-                            console.log(
-                              "Image load error:",
-                              e.nativeEvent.error
-                            )
-                          }
-                          onLoad={() => console.log("Image loaded:", posterUrl)}
-                        />
-
-                        {/* Gradient Overlay on Image */}
-                        <LinearGradient
-                          colors={["transparent", "rgba(0,0,0,0.9)"]}
-                          style={styles.cardGradientOverlay}
-                        >
-                          <View style={styles.cardBottomInfo}>
-                            {item.vote_average && (
-                              <View style={styles.ratingBadge}>
-                                <StarIcon size={11} color="#FFD700" />
-                                <Text style={styles.ratingBadgeText}>
-                                  {item.vote_average.toFixed(1)}
-                                </Text>
-                              </View>
-                            )}
-                          </View>
-                        </LinearGradient>
-
-                        {/* Hover Play Button */}
-                        <View style={styles.cardOverlay}>
-                          <View style={styles.playButtonSmall}>
-                            <PlayIcon size={22} color={colors.black} />
-                          </View>
-                        </View>
-
-                        {/* Top Badge - Remove from List */}
-                        <TouchableOpacity
-                          style={styles.topBadgeContainer}
-                          onPress={() =>
-                            handleRemove(item.media_id, item.media_type)
-                          }
-                        >
-                          <View style={styles.inListBadge}>
-                            <CheckIcon size={11} color={colors.white} />
-                          </View>
-                        </TouchableOpacity>
-                      </View>
-
-                      <View style={styles.cardInfo}>
-                        <Text style={styles.itemTitle} numberOfLines={2}>
-                          {item.title}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
+        {!loading && myList.length === 0 && continueWatching.length === 0 && (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>Your list is empty</Text>
+            <Text style={styles.emptySubtext}>
+              Add movies and shows from the home screen!
+            </Text>
           </View>
         )}
 
-        {/* Bottom Spacing */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
     </SafeAreaView>
@@ -562,8 +477,8 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   section: {
-    marginTop: 34,
-    marginBottom: 18,
+    marginTop: 24,
+    marginBottom: 8,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -571,280 +486,103 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginLeft: 20,
     marginRight: 20,
-    marginBottom: 18,
+    marginBottom: 16,
   },
   sectionTitle: {
     color: colors.white,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "bold",
-    letterSpacing: 0.4,
   },
-  sectionCount: {
-    color: colors.white,
-    fontSize: 13,
-    fontWeight: "700",
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 14,
-    letterSpacing: 0.3,
+  clearButton: {
+    color: colors.primary,
+    fontSize: 14,
+    fontWeight: "600",
   },
-  horizontalList: {
-    paddingHorizontal: 20,
-    paddingBottom: 5,
+  horizontalScroll: {
+    paddingLeft: 20,
+    paddingRight: 10,
   },
-  continueCard: {
-    marginRight: 18,
-    borderRadius: 10,
-    overflow: "hidden",
-    width: 360,
+  horizontalCard: {
+    marginRight: 12,
+    width: 120,
+  },
+  horizontalImage: {
+    width: 120,
+    height: 180,
+    borderRadius: 8,
     backgroundColor: colors.cardBackground,
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
   },
-  continueImageContainer: {
-    position: "relative",
-  },
-  continueImage: {
-    width: 360,
-    height: 200,
-  },
-  continueGradientOverlay: {
+  playIconOverlay: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    bottom: 0,
-    justifyContent: "flex-end",
-    paddingHorizontal: 16,
-    paddingBottom: 50,
-  },
-  episodeOverlayInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  episodeNumber: {
-    color: colors.white,
-    fontSize: 13,
-    fontWeight: "700",
-    textShadowColor: "rgba(0, 0, 0, 0.8)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
-    letterSpacing: 0.3,
-  },
-  continueOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    bottom: 40,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.15)",
-  },
-  playButtonCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "rgba(255, 255, 255, 0.98)",
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    borderRadius: 8,
   },
   progressBarContainer: {
     position: "absolute",
-    bottom: 0,
+    bottom: 40,
     left: 0,
     right: 0,
-    paddingHorizontal: 0,
-    paddingBottom: 0,
+    height: 3,
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
   },
   progressBar: {
-    height: 5,
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
-    borderRadius: 0,
-    overflow: "hidden",
-  },
-  progressFill: {
     height: "100%",
-    backgroundColor: colors.netflixRed,
-    borderRadius: 0,
+    backgroundColor: colors.primary,
   },
-  continueInfo: {
-    padding: 16,
-  },
-  continueTitle: {
+  horizontalTitle: {
     color: colors.white,
-    fontSize: 17,
-    fontWeight: "700",
-    marginBottom: 5,
-    letterSpacing: 0.3,
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 8,
   },
-  continueEpisode: {
+  episodeText: {
     color: colors.lightGray,
-    fontSize: 14,
-    fontWeight: "500",
-    letterSpacing: 0.2,
+    fontSize: 11,
+    marginTop: 2,
   },
-  emptySection: {
-    alignItems: "center",
-    paddingVertical: 70,
-    paddingHorizontal: 40,
-  },
-  emptyIconContainer: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 24,
-    borderWidth: 2,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  emptyText: {
-    color: colors.white,
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 12,
-    textAlign: "center",
-    letterSpacing: 0.4,
-  },
-  emptySubtext: {
-    color: colors.lightGray,
-    fontSize: 15,
-    textAlign: "center",
-    lineHeight: 22,
-    maxWidth: 300,
-    letterSpacing: 0.2,
-  },
-  gridContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    paddingHorizontal: 16,
-    paddingTop: 5,
-  },
-  card: {
-    width: width > 600 ? "23%" : "31%",
-    marginHorizontal: width > 600 ? "1%" : "1.16%",
-    marginBottom: 32,
-  },
-  cardImageContainer: {
-    position: "relative",
-    borderRadius: 8,
-    overflow: "hidden",
-    backgroundColor: colors.cardBackground,
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 10,
-  },
-  image: {
-    width: "100%",
-    aspectRatio: 2 / 3,
-    backgroundColor: colors.cardBackground,
-  },
-  cardGradientOverlay: {
+  removeButton: {
     position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: "40%",
-    justifyContent: "flex-end",
-    paddingHorizontal: 10,
-    paddingBottom: 10,
-  },
-  cardBottomInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  ratingBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    top: 6,
+    right: 6,
+    width: 24,
+    height: 24,
     borderRadius: 12,
-    gap: 4,
-  },
-  ratingBadgeText: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.2,
-  },
-  cardOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
     justifyContent: "center",
     alignItems: "center",
-    opacity: 0,
-  },
-  playButtonSmall: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(255, 255, 255, 0.98)",
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-  },
-  topBadgeContainer: {
-    position: "absolute",
-    top: 8,
-    right: 8,
-  },
-  inListBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(70, 211, 105, 0.95)",
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-  },
-  cardInfo: {
-    marginTop: 12,
-    paddingHorizontal: 4,
-  },
-  itemTitle: {
-    color: colors.white,
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 6,
-    lineHeight: 18,
-    letterSpacing: 0.3,
   },
   ratingRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    marginTop: 4,
   },
   ratingText: {
     color: colors.lightGray,
-    fontSize: 13,
+    fontSize: 11,
+    marginLeft: 4,
+  },
+  emptyContainer: {
+    paddingVertical: 80,
+    paddingHorizontal: 40,
+    alignItems: "center",
+  },
+  emptyText: {
+    color: colors.white,
+    fontSize: 18,
     fontWeight: "600",
-    letterSpacing: 0.2,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  emptySubtext: {
+    color: colors.lightGray,
+    fontSize: 14,
+    textAlign: "center",
   },
   bottomSpacer: {
     height: 50,

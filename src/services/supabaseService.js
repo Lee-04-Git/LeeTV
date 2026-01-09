@@ -263,7 +263,11 @@ export const getContinueWatching = async (mediaType = null) => {
     const userId = getUserId();
     if (!userId) throw new Error("User not authenticated");
 
+<<<<<<< HEAD
     // Get all watch history for the user (now unique per media_id already)
+=======
+    // Get all watch history for the user, ordered by most recent
+>>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
     let query = supabase
       .from("watch_history")
       .select("*")
@@ -279,8 +283,29 @@ export const getContinueWatching = async (mediaType = null) => {
 
     if (error) throw error;
 
+<<<<<<< HEAD
     console.log(`Returning ${data?.length || 0} continue watching items`);
     return (data || []).slice(0, 10); // Limit to 10 items
+=======
+    // Remove duplicates: Keep only the MOST RECENT entry per unique content
+    // For TV shows: group by media_id to show most recent episode watched
+    // For movies: group by media_id
+    const uniqueContent = [];
+    const seenIds = new Set();
+
+    for (const item of data || []) {
+      // Use media_id as unique identifier
+      if (!seenIds.has(item.media_id)) {
+        uniqueContent.push(item);
+        seenIds.add(item.media_id);
+      }
+    }
+
+    console.log(
+      `Returning ${uniqueContent.length} unique continue watching items (most recent first)`
+    );
+    return uniqueContent.slice(0, 15); // Limit to 15 items
+>>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
   } catch (error) {
     console.error("Error getting continue watching:", error);
     return [];
@@ -328,6 +353,44 @@ export const removeWatchHistory = async (mediaId, mediaType) => {
     return true;
   } catch (error) {
     console.error("Error removing watch history:", error);
+    throw error;
+  }
+};
+
+export const clearAllWatchHistory = async () => {
+  try {
+    const userId = getUserId();
+    if (!userId) throw new Error("User not authenticated");
+
+    const { error } = await supabase
+      .from("watch_history")
+      .delete()
+      .eq("user_id", userId);
+
+    if (error) throw error;
+    console.log("All watch history cleared");
+    return true;
+  } catch (error) {
+    console.error("Error clearing all watch history:", error);
+    throw error;
+  }
+};
+
+export const clearUserList = async () => {
+  try {
+    const userId = getUserId();
+    if (!userId) throw new Error("User not authenticated");
+
+    const { error } = await supabase
+      .from("user_list")
+      .delete()
+      .eq("user_id", userId);
+
+    if (error) throw error;
+    console.log("All items cleared from user list");
+    return true;
+  } catch (error) {
+    console.error("Error clearing user list:", error);
     throw error;
   }
 };

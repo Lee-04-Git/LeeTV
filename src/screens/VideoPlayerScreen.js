@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   View,
   StyleSheet,
@@ -6,16 +6,18 @@ import {
   Text,
   StatusBar,
   Platform,
-  TouchableWithoutFeedback,
   BackHandler,
 } from "react-native";
-import colors from "../constants/colors";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ScreenOrientation from "expo-screen-orientation";
 import * as NavigationBar from "expo-navigation-bar";
 import { FullscreenIcon } from "../components/Icons";
+<<<<<<< HEAD
 import { saveLastWatched } from "../services/supabaseService";
+=======
+import { saveWatchProgress, getWatchProgress } from "../services/supabaseService";
+>>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
 
-// Conditionally import WebView only for mobile
 let WebView = null;
 if (Platform.OS !== "web") {
   WebView = require("react-native-webview").WebView;
@@ -32,12 +34,71 @@ const VideoPlayerScreen = ({ navigation, route }) => {
   const backdropPath = params.backdrop_path || params.backdropPath;
   const episodeTitle = params.episodeTitle;
 
-  const [error, setError] = useState(null);
-  const [showControls, setShowControls] = useState(true);
-  const controlsTimeout = useRef(null);
+  const [videoUrl, setVideoUrl] = useState("");
+  const [initialTime, setInitialTime] = useState(0);
+  const [isReady, setIsReady] = useState(false);
+
   const webViewRef = useRef(null);
+  const progressIntervalRef = useRef(null);
+  const currentTimeRef = useRef(0);
+  const durationRef = useRef(0);
+
+  const getStorageKey = useCallback(() => {
+    return mediaType === "tv"
+      ? `vidrock_${mediaId}_S${season}E${episode}`
+      : `vidrock_${mediaId}`;
+  }, [mediaId, mediaType, season, episode]);
+
+  const loadProgress = async () => {
+    let savedTime = 0;
+    try {
+      const supabaseProgress = await getWatchProgress(mediaId, mediaType, season, episode);
+      if (supabaseProgress?.progress_seconds > 10) {
+        savedTime = supabaseProgress.progress_seconds;
+        if (supabaseProgress.duration_seconds > 0) {
+          const pct = (savedTime / supabaseProgress.duration_seconds) * 100;
+          if (pct > 95) savedTime = 0;
+        }
+      }
+      if (savedTime === 0) {
+        const local = await AsyncStorage.getItem(getStorageKey());
+        if (local) {
+          const parsed = JSON.parse(local);
+          if (parsed.currentTime > 10) savedTime = parsed.currentTime;
+        }
+      }
+    } catch (e) {
+      console.log("Load progress error:", e);
+    }
+    return savedTime;
+  };
+
+  const saveProgress = async (seconds, duration) => {
+    if (!seconds || seconds < 10) return;
+    if (duration > 0 && (seconds / duration) > 0.98) return;
+
+    try {
+      await AsyncStorage.setItem(getStorageKey(), JSON.stringify({
+        currentTime: Math.floor(seconds),
+        timestamp: Date.now(),
+      }));
+      await saveWatchProgress({
+        media_id: mediaId,
+        media_type: mediaType,
+        title,
+        poster_path: params.poster_path || null,
+        backdrop_path: params.backdrop_path || null,
+        season_number: mediaType === "tv" ? season : null,
+        episode_number: mediaType === "tv" ? episode : null,
+        episode_title: params.episodeTitle || null,
+        progress_seconds: Math.floor(seconds),
+        duration_seconds: Math.floor(duration) || (mediaType === "tv" ? 2400 : 7200),
+      });
+    } catch (e) {}
+  };
 
   useEffect(() => {
+<<<<<<< HEAD
     // Save to watch history when video loads or episode changes
     saveToWatchHistory();
 
@@ -45,8 +106,27 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     if (Platform.OS !== "web") {
       ScreenOrientation.unlockAsync();
     }
+=======
+    const init = async () => {
+      const savedTime = await loadProgress();
+      setInitialTime(savedTime);
+      currentTimeRef.current = savedTime;
+>>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
 
-    // Hide navigation bar on Android
+      let url = mediaType === "tv"
+        ? `https://vidrock.net/tv/${mediaId}/${season}/${episode}`
+        : `https://vidrock.net/movie/${mediaId}`;
+
+      const q = ["autoplay=1", "download=false", "muted=0"];
+      if (mediaType === "tv") q.push("autonext=1");
+      if (savedTime > 10) q.push(`t=${Math.floor(savedTime)}`);
+
+      setVideoUrl(url + "?" + q.join("&"));
+      setIsReady(true);
+    };
+    init();
+
+    if (Platform.OS !== "web") ScreenOrientation.unlockAsync();
     if (Platform.OS === "android") {
       try {
         NavigationBar.setVisibilityAsync("hidden");
@@ -55,24 +135,23 @@ const VideoPlayerScreen = ({ navigation, route }) => {
       }
     }
 
-    // Handle Android back button
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      () => {
-        navigation.goBack();
-        return true;
-      }
-    );
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
+      saveProgress(currentTimeRef.current, durationRef.current);
+      navigation.goBack();
+      return true;
+    });
+
+    progressIntervalRef.current = setInterval(() => {
+      saveProgress(currentTimeRef.current, durationRef.current);
+    }, 10000);
 
     return () => {
       backHandler.remove();
-      // Lock back to portrait when leaving
+      clearInterval(progressIntervalRef.current);
+      saveProgress(currentTimeRef.current, durationRef.current);
       if (Platform.OS !== "web") {
-        ScreenOrientation.lockAsync(
-          ScreenOrientation.OrientationLock.PORTRAIT_UP
-        );
+        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
       }
-      // Show navigation bar again on Android
       if (Platform.OS === "android") {
         NavigationBar.setVisibilityAsync("visible");
       }
@@ -97,43 +176,45 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     }
   };
 
-  const handleOrientationToggle = async () => {
+  const toggleOrientation = async () => {
     if (Platform.OS === "web") return;
-
-    const orientation = await ScreenOrientation.getOrientationAsync();
-    if (
-      orientation === ScreenOrientation.Orientation.PORTRAIT_UP ||
-      orientation === ScreenOrientation.Orientation.PORTRAIT_DOWN
-    ) {
-      await ScreenOrientation.lockAsync(
-        ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT
-      );
+    const o = await ScreenOrientation.getOrientationAsync();
+    if (o <= 2) {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
     } else {
-      await ScreenOrientation.lockAsync(
-        ScreenOrientation.OrientationLock.PORTRAIT_UP
-      );
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
     }
   };
 
-  // Auto-hide controls
-  useEffect(() => {
-    if (showControls) {
-      if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
-      controlsTimeout.current = setTimeout(() => {
-        setShowControls(false);
-      }, 4000);
-    }
-    return () => {
-      if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
-    };
-  }, [showControls]);
-
-  const handleBack = () => {
-    navigation.goBack();
+  const handleMessage = (e) => {
+    try {
+      const data = JSON.parse(e.nativeEvent.data);
+      if (data.type === "progress") {
+        if (data.currentTime > 0) currentTimeRef.current = data.currentTime;
+        if (data.duration > 0) durationRef.current = data.duration;
+      }
+    } catch (err) {}
   };
 
-  const toggleControls = () => setShowControls(!showControls);
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{width:100%;height:100%;background:#000;overflow:hidden}
+    iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:none}
+  </style>
+</head>
+<body>
+  <iframe src="${videoUrl}" id="player" allowfullscreen allow="autoplay;fullscreen;encrypted-media"></iframe>
+  <script>
+    const resumeTime = ${initialTime};
+    let resumed = false;
+    let video = null;
 
+<<<<<<< HEAD
   const handleRetry = () => {
     setError(null);
     if (webViewRef.current) {
@@ -171,12 +252,59 @@ const VideoPlayerScreen = ({ navigation, route }) => {
 
     return url + "?" + params.join("&");
   }, [mediaId, mediaType, season, episode]);
+=======
+    function findVideo(doc) {
+      if (!doc) return null;
+      try {
+        let v = doc.querySelector('video');
+        if (v) return v;
+        const frames = doc.querySelectorAll('iframe');
+        for (let f of frames) {
+          try {
+            v = findVideo(f.contentDocument || f.contentWindow.document);
+            if (v) return v;
+          } catch(e) {}
+        }
+      } catch(e) {}
+      return null;
+    }
 
-  // Render for Web
-  if (Platform.OS === "web") {
+    setInterval(() => {
+      if (!video) {
+        video = findVideo(document);
+        const frame = document.getElementById('player');
+        if (!video && frame) {
+          try { video = findVideo(frame.contentDocument || frame.contentWindow.document); } catch(e) {}
+        }
+      }
+      
+      if (video) {
+        if (!resumed && resumeTime > 10 && video.readyState >= 2) {
+          video.currentTime = resumeTime;
+          resumed = true;
+          video.play().catch(() => {});
+        }
+        if (video.currentTime > 0) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'progress',
+            currentTime: Math.floor(video.currentTime),
+            duration: Math.floor(video.duration || 0)
+          }));
+        }
+      }
+    }, 1500);
+
+    window.open = () => null;
+  </script>
+</body>
+</html>`;
+>>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
+
+  if (!isReady || !videoUrl) {
     return (
       <View style={styles.container}>
         <StatusBar hidden />
+<<<<<<< HEAD
         <View style={styles.videoWrapper}>
           <iframe
             key={videoUrl}
@@ -201,11 +329,16 @@ const VideoPlayerScreen = ({ navigation, route }) => {
           >
             <Text style={styles.backIcon}>←</Text>
           </TouchableOpacity>
+=======
+        <View style={styles.loading}>
+          <Text style={styles.loadingText}>Loading...</Text>
+>>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
         </View>
       </View>
     );
   }
 
+<<<<<<< HEAD
   // HTML for WebView - VidRock player with localStorage support
   // Create unique storage key per episode to prevent cross-episode progress sharing
   const storageKey =
@@ -266,10 +399,32 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     </html>
   `;
 
+=======
+>>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
   return (
     <View style={styles.container}>
       <StatusBar hidden />
+      
+      {/* WebView takes full screen - no touch interceptors */}
+      <WebView
+        ref={webViewRef}
+        source={{ html: htmlContent, baseUrl: "https://vidrock.net" }}
+        style={styles.video}
+        allowsFullscreenVideo
+        allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction={false}
+        javaScriptEnabled
+        domStorageEnabled
+        sharedCookiesEnabled
+        thirdPartyCookiesEnabled
+        cacheEnabled
+        incognito={false}
+        mixedContentMode="always"
+        originWhitelist={["*"]}
+        onMessage={handleMessage}
+      />
 
+<<<<<<< HEAD
       <TouchableWithoutFeedback onPress={toggleControls}>
         <View style={styles.videoWrapper}>
           <WebView
@@ -370,111 +525,63 @@ const VideoPlayerScreen = ({ navigation, route }) => {
                 <Text style={styles.retryText}>Retry</Text>
               </TouchableOpacity>
             </View>
+=======
+      {/* Floating controls - only at top, doesn't block video */}
+      <View style={styles.topControls} pointerEvents="box-none">
+        <TouchableOpacity
+          onPress={() => {
+            saveProgress(currentTimeRef.current, durationRef.current);
+            navigation.goBack();
+          }}
+          style={styles.btn}
+        >
+          <Text style={styles.btnText}>←</Text>
+        </TouchableOpacity>
+        
+        <View style={styles.titleBox}>
+          <Text style={styles.title} numberOfLines={1}>{title}</Text>
+          {mediaType === "tv" && (
+            <Text style={styles.episode}>S{season} E{episode}</Text>
+>>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
           )}
         </View>
-      </TouchableWithoutFeedback>
+        
+        <TouchableOpacity onPress={toggleOrientation} style={styles.btn}>
+          <FullscreenIcon size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  videoWrapper: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  video: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  controlsOverlay: {
+  container: { flex: 1, backgroundColor: "#000" },
+  video: { flex: 1, backgroundColor: "#000" },
+  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { color: "#fff", fontSize: 16 },
+  topControls: {
     position: "absolute",
     top: 0,
     left: 0,
     right: 0,
-    paddingTop: Platform.OS === "ios" ? 50 : 20,
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  topBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingBottom: 15,
+    padding: 16,
+    paddingTop: Platform.OS === "ios" ? 50 : 30,
+    backgroundColor: "rgba(0,0,0,0.4)",
   },
-  backBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.2)",
+  btn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.25)",
     justifyContent: "center",
     alignItems: "center",
   },
-  backIcon: {
-    color: "#fff",
-    fontSize: 22,
-    fontWeight: "bold",
-  },
-  titleContainer: {
-    flex: 1,
-    marginLeft: 15,
-  },
-  videoTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  episodeInfo: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 14,
-    marginTop: 2,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  errorText: {
-    color: "#fff",
-    fontSize: 18,
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  errorOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.9)",
-  },
-  backButton: {
-    backgroundColor: colors.primary || "#E50914",
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  retryButton: {
-    backgroundColor: colors.primary || "#E50914",
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  retryText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  btnText: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  titleBox: { flex: 1, marginHorizontal: 12 },
+  title: { color: "#fff", fontSize: 15, fontWeight: "600" },
+  episode: { color: "rgba(255,255,255,0.7)", fontSize: 12, marginTop: 2 },
 });
 
 export default VideoPlayerScreen;
