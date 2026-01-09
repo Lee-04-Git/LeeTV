@@ -245,12 +245,8 @@ const MyListScreen = ({ navigation }) => {
             >
               {continueWatching.map((item, index) => {
                 const posterUrl = getImageUrl(item.poster_path);
-<<<<<<< HEAD
-
-                // Use Supabase row ID for truly unique key
-=======
                 const progressPercent = item.progress_percentage || 0;
->>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
+                // Use Supabase row ID for truly unique key
                 const uniqueKey = item.id
                   ? `cw-${item.id}`
                   : `${item.media_type}-${item.media_id}-${index}`;
@@ -297,30 +293,6 @@ const MyListScreen = ({ navigation }) => {
                           { width: `${Math.min(progressPercent, 100)}%` },
                         ]}
                       />
-<<<<<<< HEAD
-
-                      {/* Dark overlay with gradient */}
-                      <LinearGradient
-                        colors={["transparent", "rgba(0,0,0,0.75)"]}
-                        style={styles.continueGradientOverlay}
-                      >
-                        <View style={styles.episodeOverlayInfo}>
-                          {item.media_type === "tv" && (
-                            <Text style={styles.episodeNumber}>
-                              S{item.season_number} E{item.episode_number}
-                            </Text>
-                          )}
-                        </View>
-                      </LinearGradient>
-
-                      {/* Play Button Overlay */}
-                      <View style={styles.continueOverlay}>
-                        <View style={styles.playButtonCircle}>
-                          <PlayIcon size={26} color={colors.black} />
-                        </View>
-                      </View>
-=======
->>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
                     </View>
                     <Text style={styles.horizontalTitle} numberOfLines={1}>
                       {item.title}
