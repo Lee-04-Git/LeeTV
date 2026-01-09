@@ -213,9 +213,8 @@ const MyListScreen = ({ navigation }) => {
             >
               {continueWatching.map((item, index) => {
                 const posterUrl = getImageUrl(item.poster_path);
-                const progressPercent = item.progress_percentage || 0;
 
-                // Use Supabase row ID for truly unique key, fallback to media info + index
+                // Use Supabase row ID for truly unique key
                 const uniqueKey = item.id
                   ? `cw-${item.id}`
                   : item.media_type === "tv"
@@ -237,9 +236,6 @@ const MyListScreen = ({ navigation }) => {
                           poster_path: item.poster_path,
                           backdrop_path: item.backdrop_path,
                           episodeTitle: item.episode_title,
-                          // Pass saved progress directly to skip Supabase query
-                          savedProgress: item.progress_seconds,
-                          savedDuration: item.duration_seconds,
                         });
                       } else {
                         navigation.navigate("VideoPlayer", {
@@ -248,9 +244,6 @@ const MyListScreen = ({ navigation }) => {
                           mediaType: "movie",
                           poster_path: item.poster_path,
                           backdrop_path: item.backdrop_path,
-                          // Pass saved progress directly to skip Supabase query
-                          savedProgress: item.progress_seconds,
-                          savedDuration: item.duration_seconds,
                         });
                       }
                     }}
@@ -281,18 +274,6 @@ const MyListScreen = ({ navigation }) => {
                       <View style={styles.continueOverlay}>
                         <View style={styles.playButtonCircle}>
                           <PlayIcon size={26} color={colors.black} />
-                        </View>
-                      </View>
-
-                      {/* Progress Bar */}
-                      <View style={styles.progressBarContainer}>
-                        <View style={styles.progressBar}>
-                          <View
-                            style={[
-                              styles.progressFill,
-                              { width: `${Math.min(progressPercent, 100)}%` },
-                            ]}
-                          />
                         </View>
                       </View>
                     </View>

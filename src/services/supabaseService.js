@@ -207,7 +207,7 @@ export const isInList = async (mediaId, mediaType) => {
 
 // ===== WATCH HISTORY OPERATIONS =====
 
-export const saveWatchProgress = async (watchData) => {
+export const saveLastWatched = async (watchData) => {
   try {
     const userId = getUserId();
     if (!userId) throw new Error("User not authenticated");
@@ -221,51 +221,39 @@ export const saveWatchProgress = async (watchData) => {
       season_number,
       episode_number,
       episode_title,
-      progress_seconds,
-      duration_seconds,
     } = watchData;
 
-    const progress_percentage =
-      duration_seconds > 0 ? (progress_seconds / duration_seconds) * 100 : 0;
+    // First, delete any existing entries for this media (to ensure only one per show/movie)
+    await supabase
+      .from("watch_history")
+      .delete()
+      .eq("user_id", userId)
+      .eq("media_id", media_id)
+      .eq("media_type", media_type);
 
-    // For TV shows, we need to track each episode separately
-    // For movies, we track the movie itself
-    const conflictColumns =
-      media_type === "tv"
-        ? "user_id,media_id,media_type,season_number,episode_number"
-        : "user_id,media_id,media_type,season_number,episode_number"; // Use all columns for movies too (season/episode will be null)
-
-    // Use upsert to update if exists or insert if new
+    // Then insert the new entry
     const { data, error } = await supabase
       .from("watch_history")
-      .upsert(
-        {
-          user_id: userId,
-          media_id,
-          media_type,
-          title,
-          poster_path,
-          backdrop_path,
-          season_number: season_number || null,
-          episode_number: episode_number || null,
-          episode_title: episode_title || null,
-          progress_seconds,
-          duration_seconds,
-          progress_percentage: progress_percentage.toFixed(2),
-          last_watched_at: new Date().toISOString(),
-        },
-        {
-          onConflict: conflictColumns,
-        }
-      )
+      .insert({
+        user_id: userId,
+        media_id,
+        media_type,
+        title,
+        poster_path,
+        backdrop_path,
+        season_number: season_number || null,
+        episode_number: episode_number || null,
+        episode_title: episode_title || null,
+        last_watched_at: new Date().toISOString(),
+      })
       .select()
       .single();
 
     if (error) throw error;
-    console.log("Watch progress saved to Supabase:", data);
+    console.log("Last watched saved to Supabase:", data);
     return data;
   } catch (error) {
-    console.error("Error saving watch progress:", error);
+    console.error("Error saving last watched:", error);
     throw error;
   }
 };
@@ -275,7 +263,7 @@ export const getContinueWatching = async (mediaType = null) => {
     const userId = getUserId();
     if (!userId) throw new Error("User not authenticated");
 
-    // Get all watch history for the user
+    // Get all watch history for the user (now unique per media_id already)
     let query = supabase
       .from("watch_history")
       .select("*")
@@ -291,64 +279,26 @@ export const getContinueWatching = async (mediaType = null) => {
 
     if (error) throw error;
 
-    // For TV shows: Keep only the LATEST episode per show (by media_id)
-    // For movies: Keep only the LATEST entry per movie (by media_id)
-    const uniqueContent = [];
-    const seenShowIds = new Set();
-    const seenMovieIds = new Set();
-
-    for (const item of data || []) {
-      if (item.media_type === "tv") {
-        // For TV shows, only add if we haven't seen this show yet
-        if (!seenShowIds.has(item.media_id)) {
-          uniqueContent.push(item);
-          seenShowIds.add(item.media_id);
-        }
-      } else {
-        // For movies, only add if we haven't seen this movie yet
-        if (!seenMovieIds.has(item.media_id)) {
-          uniqueContent.push(item);
-          seenMovieIds.add(item.media_id);
-        }
-      }
-    }
-
-    console.log(
-      `Returning ${uniqueContent.length} unique continue watching items`
-    );
-    return uniqueContent.slice(0, 10); // Limit to 10 items
+    console.log(`Returning ${data?.length || 0} continue watching items`);
+    return (data || []).slice(0, 10); // Limit to 10 items
   } catch (error) {
     console.error("Error getting continue watching:", error);
     return [];
   }
 };
 
-export const getWatchProgress = async (
-  mediaId,
-  mediaType,
-  season = null,
-  episode = null
-) => {
+export const getLastWatched = async (mediaId, mediaType) => {
   try {
     const userId = getUserId();
     if (!userId) return null;
 
-    // Build query to find specific watch history
-    let query = supabase
+    // Get the last watched info for this media
+    const { data, error } = await supabase
       .from("watch_history")
       .select("*")
       .eq("user_id", userId)
       .eq("media_id", mediaId)
-      .eq("media_type", mediaType);
-
-    // If TV show details are provided, filter by them
-    if (mediaType === "tv" && season && episode) {
-      query = query.eq("season_number", season).eq("episode_number", episode);
-    }
-
-    const { data, error } = await query
-      .order("last_watched_at", { ascending: false })
-      .limit(1)
+      .eq("media_type", mediaType)
       .single();
 
     if (error && error.code !== "PGRST116") {
@@ -357,7 +307,7 @@ export const getWatchProgress = async (
 
     return data;
   } catch (error) {
-    console.error("Error getting watch progress:", error);
+    console.error("Error getting last watched:", error);
     return null;
   }
 };

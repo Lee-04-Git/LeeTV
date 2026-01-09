@@ -13,6 +13,7 @@ import colors from "../constants/colors";
 import * as ScreenOrientation from "expo-screen-orientation";
 import * as NavigationBar from "expo-navigation-bar";
 import { FullscreenIcon } from "../components/Icons";
+import { saveLastWatched } from "../services/supabaseService";
 
 // Conditionally import WebView only for mobile
 let WebView = null;
@@ -27,6 +28,9 @@ const VideoPlayerScreen = ({ navigation, route }) => {
   const mediaType = params.mediaType || params.type || "movie";
   const season = params.season || 1;
   const episode = params.episode || 1;
+  const posterPath = params.poster_path || params.posterPath;
+  const backdropPath = params.backdrop_path || params.backdropPath;
+  const episodeTitle = params.episodeTitle;
 
   const [error, setError] = useState(null);
   const [showControls, setShowControls] = useState(true);
@@ -34,6 +38,9 @@ const VideoPlayerScreen = ({ navigation, route }) => {
   const webViewRef = useRef(null);
 
   useEffect(() => {
+    // Save to watch history when video loads or episode changes
+    saveToWatchHistory();
+
     // Allow auto-rotation on mobile
     if (Platform.OS !== "web") {
       ScreenOrientation.unlockAsync();
@@ -41,8 +48,11 @@ const VideoPlayerScreen = ({ navigation, route }) => {
 
     // Hide navigation bar on Android
     if (Platform.OS === "android") {
-      NavigationBar.setVisibilityAsync("hidden");
-      NavigationBar.setBehaviorAsync("overlay-swipe");
+      try {
+        NavigationBar.setVisibilityAsync("hidden");
+      } catch (e) {
+        console.log("NavigationBar not available");
+      }
     }
 
     // Handle Android back button
@@ -67,7 +77,25 @@ const VideoPlayerScreen = ({ navigation, route }) => {
         NavigationBar.setVisibilityAsync("visible");
       }
     };
-  }, []);
+  }, [mediaId, season, episode]);
+
+  const saveToWatchHistory = async () => {
+    try {
+      await saveLastWatched({
+        media_id: mediaId,
+        media_type: mediaType,
+        title: title,
+        poster_path: posterPath,
+        backdrop_path: backdropPath,
+        season_number: mediaType === "tv" ? season : null,
+        episode_number: mediaType === "tv" ? episode : null,
+        episode_title: mediaType === "tv" ? episodeTitle : null,
+      });
+      console.log("Saved to watch history:", title);
+    } catch (error) {
+      console.error("Error saving to watch history:", error);
+    }
+  };
 
   const handleOrientationToggle = async () => {
     if (Platform.OS === "web") return;
@@ -129,7 +157,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
   }
 
   // Construct the video URL - VidRock handles ALL progress via its own localStorage
-  const buildVideoUrl = () => {
+  const videoUrl = React.useMemo(() => {
     let url =
       mediaType === "tv"
         ? `https://vidrock.net/tv/${mediaId}/${season}/${episode}`
@@ -142,9 +170,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     }
 
     return url + "?" + params.join("&");
-  };
-
-  const videoUrl = buildVideoUrl();
+  }, [mediaId, mediaType, season, episode]);
 
   // Render for Web
   if (Platform.OS === "web") {
@@ -153,6 +179,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
         <StatusBar hidden />
         <View style={styles.videoWrapper}>
           <iframe
+            key={videoUrl}
             src={videoUrl}
             style={{
               width: "100%",
@@ -179,7 +206,11 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     );
   }
 
-  // HTML for WebView - VidRock player handles everything via localStorage
+  // HTML for WebView - VidRock player with localStorage support
+  // Create unique storage key per episode to prevent cross-episode progress sharing
+  const storageKey =
+    mediaType === "tv" ? `${mediaId}_s${season}_e${episode}` : `${mediaId}`;
+
   const htmlContent = `
     <!DOCTYPE html>
     <html>
@@ -208,6 +239,25 @@ const VideoPlayerScreen = ({ navigation, route }) => {
         window.open = function() { return null; };
         window.alert = function() {};
         
+        // Clear VidRock's localStorage for this specific episode on load to prevent cross-episode contamination
+        // This ensures each episode starts fresh and VidRock tracks progress correctly per episode
+        try {
+          const storageKey = '${storageKey}';
+          const allKeys = Object.keys(localStorage);
+          
+          // Clear all VidRock progress keys EXCEPT the current episode
+          allKeys.forEach(key => {
+            if (key.includes('${mediaId}') && !key.includes(storageKey)) {
+              // Remove progress data from other episodes/seasons of the same show
+              localStorage.removeItem(key);
+            }
+          });
+          
+          console.log('LocalStorage cleared for other episodes, preserving:', storageKey);
+        } catch(e) {
+          console.log('localStorage access failed:', e);
+        }
+        
         setInterval(() => {
           document.querySelectorAll('[id*="ad"], [class*="ad"]').forEach(el => el.remove());
         }, 1000);
@@ -223,6 +273,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
       <TouchableWithoutFeedback onPress={toggleControls}>
         <View style={styles.videoWrapper}>
           <WebView
+            key={videoUrl}
             ref={webViewRef}
             source={{ html: htmlContent, baseUrl: "https://vidrock.net" }}
             style={styles.video}
@@ -231,6 +282,8 @@ const VideoPlayerScreen = ({ navigation, route }) => {
             mediaPlaybackRequiresUserAction={false}
             javaScriptEnabled={true}
             domStorageEnabled={true}
+            cacheEnabled={true}
+            cacheMode="LOAD_DEFAULT"
             androidLayerType="hardware"
             onError={(e) => setError(e.nativeEvent.description)}
             mixedContentMode="always"
@@ -241,6 +294,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
             allowsProtectedMedia={true}
             sharedCookiesEnabled={true}
             thirdPartyCookiesEnabled={true}
+            incognito={false}
             onShouldStartLoadWithRequest={(request) => {
               const url = request.url.toLowerCase();
               const adPatterns = [
