@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -12,13 +12,12 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
 import colors from "../constants/colors";
 import {
-  PlusIcon,
-  CheckIcon,
   StarIcon,
   PlayIcon,
-  DownloadIcon,
+  BackIcon,
 } from "../components/Icons";
 import {
   fetchMovieDetails,
@@ -44,11 +43,31 @@ const ShowDetailsScreen = ({ navigation, route }) => {
   const [selectedSeason, setSelectedSeason] = useState(1);
   const [seasonDetails, setSeasonDetails] = useState(null);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
-  const [showSeasonDropdown, setShowSeasonDropdown] = useState(false);
   const [relatedContent, setRelatedContent] = useState([]);
   const [loadingRelated, setLoadingRelated] = useState(false);
   const [inList, setInList] = useState(false);
   const [checkingList, setCheckingList] = useState(true);
+
+  const seasonTabsRef = useRef(null);
+
+  const handleSeasonSelect = (seasonNumber, index) => {
+    setSelectedSeason(seasonNumber);
+
+    // Calculate scroll position to center the selected tab
+    const TAB_WIDTH = 90; // width of each season link
+    const screenWidth = width;
+    const scrollX = Math.max(0, (index * TAB_WIDTH) - (screenWidth / 2) + (TAB_WIDTH / 2));
+
+    // Animate the scroll
+    seasonTabsRef.current?.scrollTo({ x: scrollX, animated: true });
+  };
+
+  // Format episode code as SXXEXX
+  const formatEpisodeCode = (season, episode) => {
+    const s = String(season).padStart(2, '0');
+    const e = String(episode).padStart(2, '0');
+    return `S${s}E${e}`;
+  };
 
   useEffect(() => {
     loadDetails();
@@ -213,7 +232,7 @@ const ShowDetailsScreen = ({ navigation, route }) => {
           onPress={() => navigation.goBack()}
           style={styles.backButton}
         >
-          <Text style={styles.backIcon}>←</Text>
+          <BackIcon size={24} color={colors.white} />
         </TouchableOpacity>
         <TouchableOpacity onPress={() => navigation.navigate("Home")}>
           <Text style={styles.logo}>LeeTV</Text>
@@ -221,7 +240,10 @@ const ShowDetailsScreen = ({ navigation, route }) => {
         <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.netflixRed} />
@@ -271,13 +293,13 @@ const ShowDetailsScreen = ({ navigation, route }) => {
                   onPress={handleListToggle}
                   disabled={checkingList}
                 >
-                  {inList ? (
-                    <CheckIcon size={24} color={colors.white} />
-                  ) : (
-                    <PlusIcon size={24} color={colors.white} />
-                  )}
+                  <Ionicons
+                    name={inList ? "checkmark" : "add"}
+                    size={24}
+                    color="#fff"
+                  />
                   <Text style={styles.myListButtonText}>
-                    {inList ? "In My List" : "My List"}
+                    {inList ? "Added" : "My List"}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -318,12 +340,32 @@ const ShowDetailsScreen = ({ navigation, route }) => {
               {show?.cast && show.cast.length > 0 && (
                 <View style={styles.castSection}>
                   <Text style={styles.sectionTitle}>Cast</Text>
-                  <Text style={styles.castText}>
-                    {show.cast
-                      .slice(0, 5)
-                      .map((c) => c.name)
-                      .join(", ")}
-                  </Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.castRow}
+                  >
+                    {show.cast.slice(0, 10).map((actor, index) => (
+                      <View key={index} style={styles.castCard}>
+                        <Image
+                          source={{
+                            uri:
+                              actor.profile ||
+                              "https://via.placeholder.com/100x100?text=No+Image",
+                          }}
+                          style={styles.castImage}
+                        />
+                        <Text style={styles.castName} numberOfLines={2}>
+                          {actor.name}
+                        </Text>
+                        {actor.character && (
+                          <Text style={styles.castCharacter} numberOfLines={1}>
+                            {actor.character}
+                          </Text>
+                        )}
+                      </View>
+                    ))}
+                  </ScrollView>
                 </View>
               )}
 
@@ -342,65 +384,52 @@ const ShowDetailsScreen = ({ navigation, route }) => {
                 show?.seasons &&
                 show.seasons.length > 0 && (
                   <>
-                    {/* Season Selector */}
-                    <View style={styles.seasonContainer}>
-                      <TouchableOpacity
-                        style={styles.seasonButton}
-                        onPress={() =>
-                          setShowSeasonDropdown(!showSeasonDropdown)
-                        }
-                      >
-                        <Text style={styles.seasonText}>
-                          Season {selectedSeason}
-                        </Text>
-                        <Text style={styles.dropdownIcon}>▼</Text>
-                      </TouchableOpacity>
+                    {/* Season Links - Scroll Style */}
+                    <ScrollView
+                      ref={seasonTabsRef}
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.seasonLinksContainer}
+                      style={styles.seasonLinksScroll}
+                    >
+                      {show.seasons
+                        .filter((s) => s.seasonNumber > 0)
+                        .map((season, index) => (
+                          <TouchableOpacity
+                            key={season.id}
+                            style={styles.seasonLink}
+                            onPress={() => handleSeasonSelect(season.seasonNumber, index)}
+                            activeOpacity={0.7}
+                          >
+                            <Text
+                              style={[
+                                styles.seasonLinkText,
+                                selectedSeason === season.seasonNumber &&
+                                styles.seasonLinkTextActive,
+                              ]}
+                            >
+                              Season {season.seasonNumber}
+                            </Text>
+                            {selectedSeason === season.seasonNumber && (
+                              <View style={styles.seasonLinkUnderline} />
+                            )}
+                          </TouchableOpacity>
+                        ))}
+                    </ScrollView>
 
-                      {showSeasonDropdown && (
-                        <View style={styles.seasonDropdown}>
-                          {show.seasons
-                            .filter((s) => s.seasonNumber > 0)
-                            .map((season) => (
-                              <TouchableOpacity
-                                key={season.id}
-                                style={[
-                                  styles.seasonOption,
-                                  selectedSeason === season.seasonNumber &&
-                                    styles.selectedSeasonOption,
-                                ]}
-                                onPress={() => {
-                                  setSelectedSeason(season.seasonNumber);
-                                  setShowSeasonDropdown(false);
-                                }}
-                              >
-                                <Text
-                                  style={[
-                                    styles.seasonOptionText,
-                                    selectedSeason === season.seasonNumber &&
-                                      styles.selectedSeasonText,
-                                  ]}
-                                >
-                                  {season.name}
-                                </Text>
-                              </TouchableOpacity>
-                            ))}
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Episodes List */}
+                    {/* Episodes List - Netflix Style Vertical List */}
                     {loadingEpisodes ? (
                       <View style={styles.episodesLoadingContainer}>
                         <ActivityIndicator
                           size="small"
-                          color={colors.netflixRed}
+                          color={colors.white}
                         />
                         <Text style={styles.episodesLoadingText}>
                           Loading episodes...
                         </Text>
                       </View>
                     ) : (
-                      <View style={styles.episodesContainer}>
+                      <View style={styles.episodesList}>
                         {seasonDetails?.episodes?.map((episode) => (
                           <TouchableOpacity
                             key={episode.id}
@@ -417,27 +446,30 @@ const ShowDetailsScreen = ({ navigation, route }) => {
                                 backdrop_path: show?.backdrop_path,
                               });
                             }}
+                            activeOpacity={0.7}
                           >
-                            <Image
-                              source={{ uri: episode.stillPath }}
-                              style={styles.episodeThumbnail}
-                              resizeMode="cover"
-                            />
-                            <View style={styles.episodeInfo}>
-                              <View style={styles.episodeHeader}>
-                                <Text style={styles.episodeNumber}>
-                                  {episode.episodeNumber}. {episode.name}
-                                </Text>
-                                <Text style={styles.episodeDuration}>
-                                  {episode.runtime}
-                                </Text>
+                            {/* Thumbnail with Play Icon */}
+                            <View style={styles.episodeThumbnailWrapper}>
+                              <Image
+                                source={{ uri: episode.stillPath }}
+                                style={styles.episodeThumbnail}
+                                resizeMode="cover"
+                              />
+                              <View style={styles.episodePlayIcon}>
+                                <Ionicons name="play" size={16} color={colors.white} />
                               </View>
-                              <Text
-                                style={styles.episodeDescription}
-                                numberOfLines={2}
-                              >
-                                {episode.overview ||
-                                  "No description available."}
+                              {episode.runtime && episode.runtime !== "N/A" && (
+                                <Text style={styles.episodeDuration}>{episode.runtime}</Text>
+                              )}
+                            </View>
+
+                            {/* Episode Details */}
+                            <View style={styles.episodeDetails}>
+                              <Text style={styles.episodeTitle} numberOfLines={1}>
+                                {formatEpisodeCode(selectedSeason, episode.episodeNumber)} · {episode.name}
+                              </Text>
+                              <Text style={styles.episodeDescription} numberOfLines={2}>
+                                {episode.overview || "No description available."}
                               </Text>
                             </View>
                           </TouchableOpacity>
@@ -488,8 +520,8 @@ const ShowDetailsScreen = ({ navigation, route }) => {
             </View>
           </>
         )}
-      </ScrollView>
-    </SafeAreaView>
+      </ScrollView >
+    </SafeAreaView >
   );
 };
 
@@ -516,13 +548,9 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
-  },
-  backIcon: {
-    fontSize: 24,
-    color: colors.white,
   },
   logo: {
     fontSize: 22,
@@ -611,29 +639,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 24,
   },
-  seasonContainer: {
-    marginBottom: 20,
-    marginTop: 10,
-  },
-  seasonButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    padding: 16,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
-  },
-  seasonText: {
-    color: colors.white,
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  dropdownIcon: {
-    color: colors.white,
-    fontSize: 14,
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -702,18 +707,46 @@ const styles = StyleSheet.create({
   },
   castSection: {
     marginTop: 8,
-    marginBottom: 12,
+    marginBottom: 20,
   },
   sectionTitle: {
     color: colors.white,
     fontSize: 17,
     fontWeight: "bold",
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  castText: {
-    color: colors.lightGray,
-    fontSize: 14,
-    lineHeight: 22,
+  castRow: {
+    paddingRight: 20,
+    alignItems: "flex-start",
+  },
+  castCard: {
+    alignItems: "center",
+    marginRight: 14,
+    width: 75,
+  },
+  castImage: {
+    width: 65,
+    height: 65,
+    borderRadius: 32.5,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+  },
+  castName: {
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: 14,
+    height: 28,
+  },
+  castCharacter: {
+    color: colors.gray,
+    fontSize: 10,
+    textAlign: "center",
+    marginTop: 2,
+    height: 14,
   },
   creatorText: {
     color: colors.lightGray,
@@ -722,100 +755,115 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     lineHeight: 20,
   },
-  seasonDropdown: {
-    backgroundColor: colors.cardBackground,
-    marginTop: 8,
-    borderRadius: 6,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+  // Season Links - Scroll Style
+  seasonLinksScroll: {
+    marginTop: 20,
+    marginBottom: 16,
+    marginHorizontal: -20,
   },
-  seasonOption: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.05)",
+  seasonLinksContainer: {
+    paddingHorizontal: 20,
+    gap: 24,
   },
-  selectedSeasonOption: {
-    backgroundColor: "rgba(229, 9, 20, 0.2)",
+  seasonLink: {
+    paddingVertical: 8,
+    alignItems: "center",
   },
-  seasonOptionText: {
-    color: colors.white,
+  seasonLinkText: {
+    color: colors.gray,
     fontSize: 15,
     fontWeight: "500",
   },
-  selectedSeasonText: {
-    color: colors.netflixRed,
-    fontWeight: "bold",
+  seasonLinkTextActive: {
+    color: colors.white,
+    fontWeight: "700",
   },
+  seasonLinkUnderline: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: colors.white,
+    borderRadius: 1,
+  },
+  // Episodes Loading
   episodesLoadingContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 30,
+    paddingVertical: 40,
     gap: 12,
   },
   episodesLoadingText: {
-    color: colors.lightGray,
+    color: colors.gray,
     fontSize: 14,
-    fontWeight: "600",
   },
-  episodesContainer: {
-    marginTop: 10,
-    gap: 16,
+  // Episodes List - Netflix Style Vertical
+  episodesList: {
+    gap: 0,
   },
+  // Episode Card - Netflix Style (horizontal layout: thumbnail left, info right)
   episodeCard: {
     flexDirection: "row",
-    marginBottom: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 8,
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+  },
+  episodeThumbnailWrapper: {
+    position: "relative",
+    width: 130,
+    height: 73,
+    borderRadius: 4,
     overflow: "hidden",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
   episodeThumbnail: {
-    width: 150,
-    height: 85,
+    width: "100%",
+    height: "100%",
   },
-  episodeInfo: {
-    flex: 1,
-    padding: 14,
-    justifyContent: "center",
-  },
-  episodeHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 6,
-  },
-  episodeNumber: {
-    color: colors.white,
-    fontSize: 15,
-    fontWeight: "bold",
-    flex: 1,
-    paddingRight: 8,
-  },
-  episodeDuration: {
-    color: colors.gray,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  episodeDescription: {
-    color: colors.lightGray,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  episodePlayButton: {
+  episodePlayIcon: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    marginTop: -14,
+    marginLeft: -14,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    borderWidth: 1,
+    borderColor: colors.white,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  },
+  episodeDuration: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: "600",
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 2,
+  },
+  episodeDetails: {
+    flex: 1,
+    marginLeft: 12,
   },
   episodeTitle: {
     color: colors.white,
     fontSize: 14,
-    fontWeight: "bold",
-    flex: 1,
+    fontWeight: "600",
+    marginBottom: 4,
   },
-  downloadButton: {
-    padding: 5,
+  episodeDescription: {
+    color: colors.gray,
+    fontSize: 12,
+    lineHeight: 16,
   },
   moreLikeThisSection: {
     marginTop: 30,

@@ -21,6 +21,7 @@ import {
   StarIcon,
   DownloadIcon,
   CheckIcon,
+  BackIcon,
 } from "../components/Icons";
 import {
   getUserList,
@@ -146,7 +147,7 @@ const MyListScreen = ({ navigation }) => {
             style={styles.backButtonContainer}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.backButton}>←</Text>
+            <BackIcon size={24} color={colors.white} />
           </TouchableOpacity>
           <View style={styles.headerTextContainer}>
             <Text style={styles.title}>My List</Text>
@@ -367,20 +368,13 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
   },
   backButtonContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
-  },
-  backButton: {
-    color: colors.white,
-    fontSize: 26,
-    fontWeight: "600",
   },
   headerTextContainer: {
     flex: 1,

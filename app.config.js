@@ -8,9 +8,9 @@ export default {
     userInterfaceStyle: "light",
     newArchEnabled: true,
     splash: {
-      image: "./assets/splash-icon.png",
+      image: "./assets/LeeTV-logo.jpeg",
       resizeMode: "contain",
-      backgroundColor: "#ffffff",
+      backgroundColor: "#010e1f",
     },
     ios: {
       bundleIdentifier: "com.leetv.app",

@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import colors from "../constants/colors";
-import { SearchIcon, StarIcon } from "../components/Icons";
+import { SearchIcon, StarIcon, BackIcon } from "../components/Icons";
 import {
   searchContent,
   fetchTrending,
@@ -79,7 +79,7 @@ const SearchScreen = ({ navigation }) => {
           onPress={() => navigation.goBack()}
           style={styles.backButton}
         >
-          <Text style={styles.backIcon}>←</Text>
+          <BackIcon size={24} color={colors.white} />
         </TouchableOpacity>
 
         <View style={styles.searchContainer}>
@@ -213,14 +213,10 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.cardBackground,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
-  },
-  backIcon: {
-    fontSize: 24,
-    color: colors.white,
   },
   searchContainer: {
     flex: 1,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo, useRef } from "react";
+import React, { useState, useEffect, memo, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,20 +8,13 @@ import {
   ScrollView,
   Image,
   Dimensions,
-  Modal,
-  Pressable,
   FlatList,
   Animated,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import colors from "../constants/colors";
-import {
-  SearchIcon,
-  BellIcon,
-  UserIcon,
-  StarIcon,
-  PlayIcon,
-} from "../components/Icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 import {
   fetchTrending,
   fetchPopularMovies,
@@ -35,851 +28,1038 @@ import {
   fetchMoviesByGenre,
   fetchTVShowsByGenre,
   fetchAnime,
+  fetchTop10ThisWeek,
+  fetchUpcomingEpisodes,
+  fetchSplitHeroTitles,
 } from "../services/tmdbApi";
-import { SkeletonRow, SkeletonFeatured } from "../components/SkeletonLoader";
-import { getUserProfile } from "../services/supabaseService";
+import { SkeletonRow } from "../components/SkeletonLoader";
+import { getUserList, addToList, removeFromList, isInList, getContinueWatching } from "../services/supabaseService";
 
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
 
-// --- Configuration for Tabs and Sections ---
+const TABS = [
+  { id: "Home", label: "Home", icon: "home-outline", activeIcon: "home" },
+  { id: "TV Shows", label: "TV Shows", icon: "tv-outline", activeIcon: "tv" },
+  { id: "Movies", label: "Movies", icon: "film-outline", activeIcon: "film" },
+  { id: "My List", label: "My List", icon: "list-outline", activeIcon: "list" },
+];
+
+const CONTENT_TABS = TABS;
 
 const SECTIONS_CONFIG = {
   Home: [
-    {
-      title: "Trending Now",
-      fn: fetchTrending,
-      params: ["week"],
-      id: "trending",
-    },
+    { title: "Trending Now", fn: fetchTrending, params: ["week"], id: "trending" },
+    { title: "Popular on LeeTV", fn: fetchPopularMovies, params: [1], id: "pop_movies" },
     { title: "Anime", fn: fetchAnime, params: [1], id: "anime" },
-    {
-      title: "Popular Movies",
-      fn: fetchPopularMovies,
-      params: [1],
-      id: "pop_movies",
-    },
-    {
-      title: "Popular TV Shows",
-      fn: fetchPopularTVShows,
-      params: [1],
-      id: "pop_tv",
-    },
-    {
-      title: "Top Rated",
-      fn: fetchTopRatedMovies,
-      params: [1],
-      id: "top_rated",
-    },
   ],
   Movies: [
-    {
-      title: "Now Playing",
-      fn: fetchNowPlayingMovies,
-      params: [1],
-      id: "now_playing",
-    },
+    { title: "Now Playing", fn: fetchNowPlayingMovies, params: [1], id: "now_playing" },
     { title: "Upcoming", fn: fetchUpcomingMovies, params: [1], id: "upcoming" },
-    {
-      title: "Top Rated Movies",
-      fn: fetchTopRatedMovies,
-      params: [2],
-      id: "top_rated_movies",
-    },
-    {
-      title: "Action Movies",
-      fn: fetchMoviesByGenre,
-      params: [28, 1],
-      id: "action",
-    },
-    {
-      title: "Comedy Movies",
-      fn: fetchMoviesByGenre,
-      params: [35, 1],
-      id: "comedy",
-    },
-    {
-      title: "Horror Movies",
-      fn: fetchMoviesByGenre,
-      params: [27, 1],
-      id: "horror",
-    },
-    {
-      title: "Romance Movies",
-      fn: fetchMoviesByGenre,
-      params: [10749, 1],
-      id: "romance",
-    },
-    {
-      title: "Sci-Fi Movies",
-      fn: fetchMoviesByGenre,
-      params: [878, 1],
-      id: "scifi",
-    },
+    { title: "Top Rated Movies", fn: fetchTopRatedMovies, params: [2], id: "top_rated_movies" },
+    { title: "Action", fn: fetchMoviesByGenre, params: [28, 1], id: "action" },
+    { title: "Comedy", fn: fetchMoviesByGenre, params: [35, 1], id: "comedy" },
   ],
   "TV Shows": [
-    {
-      title: "Airing Today",
-      fn: fetchAiringTodayTVShows,
-      params: [1],
-      id: "airing_today",
-    },
-    {
-      title: "On The Air",
-      fn: fetchOnTheAirTVShows,
-      params: [1],
-      id: "on_the_air",
-    },
-    {
-      title: "Top Rated TV Shows",
-      fn: fetchTopRatedTVShows,
-      params: [2],
-      id: "top_rated_tv",
-    },
-    {
-      title: "Drama Series",
-      fn: fetchTVShowsByGenre,
-      params: [18, 1],
-      id: "drama",
-    },
-    {
-      title: "Comedy Series",
-      fn: fetchTVShowsByGenre,
-      params: [35, 1],
-      id: "comedy_tv",
-    },
-    {
-      title: "Crime Shows",
-      fn: fetchTVShowsByGenre,
-      params: [80, 1],
-      id: "crime",
-    },
-    {
-      title: "Sci-Fi & Fantasy",
-      fn: fetchTVShowsByGenre,
-      params: [10765, 1],
-      id: "scifi_tv",
-    },
-    {
-      title: "Animation",
-      fn: fetchTVShowsByGenre,
-      params: [16, 1],
-      id: "animation",
-    },
+    { title: "Airing Today", fn: fetchAiringTodayTVShows, params: [1], id: "airing_today" },
+    { title: "On The Air", fn: fetchOnTheAirTVShows, params: [1], id: "on_the_air" },
+    { title: "Top Rated", fn: fetchTopRatedTVShows, params: [2], id: "top_rated_tv" },
+    { title: "Drama", fn: fetchTVShowsByGenre, params: [18, 1], id: "drama" },
   ],
+  "My List": [],
 };
 
-const INITIAL_LOAD_COUNT = 7;
-const INCREMENTAL_LOAD_COUNT = 4;
-
-// --- Sub-Components ---
+const FRANCHISE_ICONS = [
+  { name: "Netflix", img: require("../../assets/netflix-icon-logo.jpg"), scale: 1.3 },
+  { name: "Marvel", img: require("../../assets/marvel.png"), scale: 1 },
+  { name: "Star Wars", img: require("../../assets/star-wars.png"), scale: 0.85 },
+  { name: "Anime", img: require("../../assets/anime.png"), scale: 1 },
+  { name: "DC", img: require("../../assets/dc.jpg"), scale: 1 },
+  { name: "Disney", img: require("../../assets/new-disneyplus-icon.jpg"), scale: 1 },
+  { name: "HBO Max", img: require("../../assets/max.jpg"), scale: 1 },
+  { name: "Apple TV+", img: require("../../assets/apple-tv-icon-logo.jpg"), scale: 1.35 },
+  { name: "Paramount+", img: require("../../assets/paramount-plus-logo-icon.png"), scale: 1 },
+  { name: "Hulu", img: require("../../assets/hulu.png"), scale: 1 },
+  { name: "USA Network", img: require("../../assets/usa-network-icon-logo.jpg"), scale: 1 },
+  { name: "The CW", img: require("../../assets/cw-network-logo.png"), scale: 1.25 },
+  { name: "ESPN", img: require("../../assets/espn-logo-icon.png"), scale: 1 },
+];
 
 const MovieItem = memo(({ item, onPress }) => (
-  <TouchableOpacity
-    style={styles.showCard}
-    onPress={() => onPress(item)}
-    activeOpacity={0.7}
-  >
-    <Image
-      source={{ uri: item.image }}
-      style={styles.showImage}
-      resizeMode="cover"
-    />
-    <View style={styles.showOverlay}>
-      <Text style={styles.showTitle} numberOfLines={1}>
-        {item.title}
-      </Text>
-      <View style={styles.showRatingRow}>
-        <StarIcon size={12} color="#FFD700" />
-        <Text style={styles.showRating}>{item.rating}</Text>
-      </View>
-    </View>
+  <TouchableOpacity style={styles.showCard} onPress={() => onPress(item)} activeOpacity={0.8}>
+    <Image source={{ uri: item.image }} style={styles.showImage} resizeMode="cover" />
   </TouchableOpacity>
 ));
 
 const HorizontalList = memo(({ title, data, loading, onShowPress }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Trigger animation when loading becomes false
   useEffect(() => {
     if (!loading && data && data.length > 0) {
-      // Slight delay to allow images to start loading
-      const timer = setTimeout(() => {
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }).start();
-      }, 100);
-      return () => clearTimeout(timer);
+      Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
     }
   }, [loading, data]);
 
-  const renderItem = useCallback(
-    ({ item }) => <MovieItem item={item} onPress={onShowPress} />,
-    [onShowPress]
-  );
-
-  if (loading) {
-    return <SkeletonRow />;
-  }
-
+  if (loading) return <SkeletonRow />;
   if (!data || data.length === 0) return null;
 
   return (
     <Animated.View style={[styles.section, { opacity: fadeAnim }]}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      {title ? <Text style={styles.sectionTitle}>{title}</Text> : null}
       <FlatList
         data={data}
-        renderItem={renderItem}
+        renderItem={({ item }) => <MovieItem item={item} onPress={onShowPress} />}
         keyExtractor={(item) => item.id.toString()}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.showList}
-        initialNumToRender={4}
-        maxToRenderPerBatch={6}
-        windowSize={3}
-        removeClippedSubviews={true}
       />
     </Animated.View>
   );
 });
 
-const BrandSection = memo(({ navigation }) => (
-  <View style={styles.brandSection}>
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.brandList}
-    >
-      {[
-        { name: "Marvel", img: require("../../assets/marvel.png") },
-        { name: "Star Wars", img: require("../../assets/star-wars.png") },
-        { name: "Anime", img: require("../../assets/anime.png") },
-        { name: "Hulu", img: require("../../assets/hulu.png") },
-        { name: "Disney", img: require("../../assets/disneyplus.jpg") },
-        { name: "DC", img: require("../../assets/dc.jpg") },
-        { name: "HBO Max", img: require("../../assets/max.jpg") },
-        { name: "Prime Video", img: null, text: true },
-      ].map((brand, index) => (
+const FranchiseRow = memo(({ navigation }) => (
+  <View style={styles.franchiseSection}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.franchiseList}>
+      {FRANCHISE_ICONS.map((item, index) => (
         <TouchableOpacity
           key={index}
-          style={styles.brandCard}
-          onPress={() =>
-            navigation.navigate("Franchise", { franchise: brand.name })
-          }
+          style={styles.franchiseItem}
+          onPress={() => navigation.navigate("Franchise", { franchise: item.name })}
+          activeOpacity={0.8}
         >
-          {brand.text ? (
-            <Text style={styles.brandPlaceholder}>{brand.name}</Text>
-          ) : (
+          <View style={styles.franchiseCircle}>
             <Image
-              source={brand.img}
-              style={styles.brandImage}
-              resizeMode="contain"
+              source={item.img}
+              style={[
+                styles.franchiseImage,
+                { transform: [{ scale: item.scale || 1 }] }
+              ]}
+              resizeMode="cover"
             />
-          )}
+          </View>
         </TouchableOpacity>
       ))}
     </ScrollView>
   </View>
 ));
 
-const FeaturedCarousel = memo(({ data, loading, navigation }) => {
-  const [currentIndex, setCurrentIndex] = useState(0);
-
-  if (loading) return <SkeletonFeatured />;
+// Continue Watching Row
+const ContinueWatchingRow = memo(({ data, navigation, loading }) => {
+  if (loading) return <SkeletonRow />;
   if (!data || data.length === 0) return null;
 
   return (
-    <View style={styles.carouselContainer}>
-      <ScrollView
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onScroll={(e) => {
-          const index = Math.round(e.nativeEvent.contentOffset.x / width);
-          setCurrentIndex(index);
-        }}
-        scrollEventThrottle={16}
-      >
-        {data.map((item, index) => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Continue Watching</Text>
+      <FlatList
+        data={data}
+        renderItem={({ item }) => (
           <TouchableOpacity
-            key={`featured-${index}`}
-            style={styles.featuredSlide}
+            style={styles.continueCard}
             onPress={() => navigation.navigate("ShowDetails", { show: item })}
+            activeOpacity={0.8}
           >
-            <Image
-              source={{ uri: item.backdrop || item.image }}
-              style={styles.featuredImage}
-              resizeMode="cover"
-            />
-            <View style={styles.featuredOverlay}>
-              <View style={styles.featuredInfo}>
-                <Text style={styles.featuredTitle}>{item.title}</Text>
-                <TouchableOpacity style={styles.playButtonInline}>
-                  <PlayIcon size={16} color={colors.black} />
-                  <Text style={styles.playButtonText}>Play</Text>
-                </TouchableOpacity>
+            <Image source={{ uri: item.backdrop || item.image }} style={styles.continueImage} resizeMode="cover" />
+            <LinearGradient colors={["transparent", "rgba(0,0,0,0.9)"]} style={styles.continueGradient}>
+              <Text style={styles.continueTitle} numberOfLines={1}>{item.title}</Text>
+              <View style={styles.progressBarContainer}>
+                <View style={[styles.progressBar, { width: `${item.progress || 30}%` }]} />
               </View>
+            </LinearGradient>
+            <View style={styles.continuePlayIcon}>
+              <Ionicons name="play" size={20} color="#fff" />
             </View>
           </TouchableOpacity>
-        ))}
-      </ScrollView>
-      <View style={styles.carouselDots}>
-        {data.map((_, index) => (
-          <View
-            key={`dot-${index}`}
-            style={[styles.dot, currentIndex === index && styles.activeDot]}
-          />
-        ))}
-      </View>
+        )}
+        keyExtractor={(item) => `continue-${item.id}`}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.showList}
+      />
     </View>
   );
 });
 
-// --- Main Screen Component ---
+// Top 10 Row with Netflix-style numbers overlaying cards
+const Top10Row = memo(({ data, navigation, loading }) => {
+  if (loading) return <SkeletonRow />;
+  if (!data || data.length === 0) return null;
 
-const HomeScreen = ({ navigation }) => {
-  const [selectedTab, setSelectedTab] = useState("Home");
-  const [showBrowseMenu, setShowBrowseMenu] = useState(false);
+  return (
+    <View style={styles.section}>
+      <View style={styles.top10Header}>
+        <Text style={styles.sectionTitle}>Top 10 This Week</Text>
+        <View style={styles.top10Badge}>
+          <Text style={styles.top10BadgeText}>TOP 10</Text>
+        </View>
+      </View>
+      <FlatList
+        data={data}
+        renderItem={({ item, index }) => (
+          <TouchableOpacity
+            style={styles.top10Card}
+            onPress={() => navigation.navigate("ShowDetails", { show: item })}
+            activeOpacity={0.8}
+          >
+            <View style={styles.top10NumberBg}>
+              <Text style={styles.top10Number}>{index + 1}</Text>
+            </View>
+            <Image source={{ uri: item.image }} style={styles.top10Image} resizeMode="cover" />
+          </TouchableOpacity>
+        )}
+        keyExtractor={(item) => `top10-${item.id}`}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.top10List}
+      />
+    </View>
+  );
+});
 
-  // Sections state: Array of { id, title, data, loading }
-  const [sections, setSections] = useState([]);
-  const [featuredData, setFeaturedData] = useState([]);
-  const [featuredLoading, setFeaturedLoading] = useState(true);
-  const [loadedCount, setLoadedCount] = useState(0);
-  const [userAvatar, setUserAvatar] = useState({
-    seed: "user1",
-    colorIndex: 0,
-  });
+// Split Hero Section - Premium Featured Section (Full-width spotlight cards)
+const SplitHeroSection = memo(({ items, navigation }) => {
+  if (!items || items.length < 2) return null;
 
-  // Load Initial Content when Tab Changes
+  return (
+    <View style={styles.featuredContainer}>
+      <View style={styles.featuredHeader}>
+        <View style={styles.featuredTitleRow}>
+          <Ionicons name="flame" size={20} color="#e50914" />
+          <Text style={styles.featuredSectionTitle}>Featured</Text>
+        </View>
+        <Text style={styles.featuredSubtitle}>Handpicked for you</Text>
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.featuredScroll}>
+        {items.map((item, index) => (
+          <TouchableOpacity
+            key={item.id}
+            style={styles.featuredCard}
+            onPress={() => navigation.navigate("ShowDetails", { show: item })}
+            activeOpacity={0.95}
+          >
+            <Image source={{ uri: item.backdrop || item.image }} style={styles.featuredImage} resizeMode="cover" />
+            <LinearGradient
+              colors={["transparent", "rgba(0,0,0,0.3)", "rgba(1,14,31,0.98)"]}
+              locations={[0, 0.4, 1]}
+              style={styles.featuredGradient}
+            >
+              <View style={styles.featuredContent}>
+                <View style={styles.featuredTopRow}>
+                  {index === 0 && (
+                    <View style={styles.featuredSpotlight}>
+                      <Ionicons name="trophy" size={12} color="#FFD700" />
+                      <Text style={styles.featuredSpotlightText}>#1 SPOTLIGHT</Text>
+                    </View>
+                  )}
+                  {index === 1 && (
+                    <View style={styles.featuredEditorPick}>
+                      <Ionicons name="star" size={12} color="#37d1e4" />
+                      <Text style={styles.featuredEditorText}>EDITOR'S PICK</Text>
+                    </View>
+                  )}
+                  <View style={styles.featuredTypePill}>
+                    <Text style={styles.featuredTypeText}>{item.type === 'tv' ? 'SERIES' : 'FILM'}</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.featuredTitle}>{item.title}</Text>
+
+                <View style={styles.featuredMetaRow}>
+                  <View style={styles.featuredRatingBox}>
+                    <Ionicons name="star" size={14} color="#FFD700" />
+                    <Text style={styles.featuredRatingText}>{item.rating}</Text>
+                  </View>
+                  <Text style={styles.featuredYear}>{item.year}</Text>
+                  <View style={styles.featuredDot} />
+                  <Text style={styles.featuredGenre}>Trending</Text>
+                </View>
+
+                <Text style={styles.featuredOverview} numberOfLines={2}>{item.overview}</Text>
+
+                <View style={styles.featuredActions}>
+                  <TouchableOpacity
+                    style={styles.featuredPlayBtn}
+                    onPress={() => navigation.navigate("ShowDetails", { show: item })}
+                  >
+                    <Ionicons name="play" size={20} color="#000" />
+                    <Text style={styles.featuredPlayText}>Play</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.featuredMoreBtn}>
+                    <Ionicons name="information-circle-outline" size={22} color="#fff" />
+                    <Text style={styles.featuredMoreText}>More Info</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.featuredAddBtn}>
+                    <Ionicons name="add" size={26} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+});
+
+// Stories Section - Episode Updates (Instagram-style circles)
+const StoriesSection = memo(({ data, navigation, onStoryPress }) => {
+  if (!data || data.length === 0) return null;
+
+  return (
+    <View style={styles.storiesContainer}>
+      <Text style={styles.sectionTitle}>Episode Updates</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storiesList}>
+        {data.map((item, index) => (
+          <TouchableOpacity
+            key={item.id}
+            style={styles.storyItem}
+            onPress={() => onStoryPress(item, index)}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={["#37d1e4", "#1a8a9e", "#0d5c6b"]}
+              style={styles.storyRing}
+            >
+              <View style={styles.storyImageContainer}>
+                <Image source={{ uri: item.image }} style={styles.storyImage} resizeMode="cover" />
+              </View>
+            </LinearGradient>
+            <Text style={styles.storyTitle} numberOfLines={1}>{item.title}</Text>
+            {item.airDateText && (
+              <View style={styles.storyDateBadge}>
+                <Text style={styles.storyDateText}>{item.airDateText}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+});
+
+// Story Viewer Modal - Episode Updates with static images
+const StoryViewer = memo(({ visible, stories, initialIndex, onClose, navigation }) => {
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
+  const currentStory = stories[currentIndex];
+
   useEffect(() => {
-    let isCancelled = false;
-    loadUserProfile();
+    setCurrentIndex(initialIndex);
+  }, [initialIndex]);
 
-    const loadTab = async () => {
-      // Immediate state reset to show skeletons
-      setSections([]);
-      setFeaturedLoading(true);
-      setLoadedCount(0);
+  useEffect(() => {
+    if (visible && currentStory) {
+      progressAnim.setValue(0);
+      Animated.timing(progressAnim, {
+        toValue: 1,
+        duration: 8000,
+        useNativeDriver: false,
+      }).start(({ finished }) => {
+        if (finished) goToNext();
+      });
+    }
+    return () => progressAnim.stopAnimation();
+  }, [currentIndex, visible]);
 
-      const config = SECTIONS_CONFIG[selectedTab] || [];
-
-      // Create initial placeholders
-      const initialBatch = config.slice(0, INITIAL_LOAD_COUNT);
-      const initialSections = initialBatch.map((item) => ({
-        ...item,
-        data: [],
-        loading: true,
-      }));
-
-      if (isCancelled) return;
-      setSections(initialSections);
-      setLoadedCount(initialBatch.length);
-
-      // If Home tab, fetch featured content (Trending) separately
-      if (selectedTab === "Home") {
-        try {
-          const trendingData = await fetchTrending("week");
-          if (!isCancelled) {
-            setFeaturedData(trendingData.slice(0, 4));
-            setFeaturedLoading(false);
-          }
-        } catch (e) {
-          console.error("Error loading featured:", e);
-          if (!isCancelled) setFeaturedLoading(false);
-        }
-      } else {
-        setFeaturedLoading(false);
-      }
-
-      // Fetch data for initial sections
-      if (!isCancelled) {
-        fetchSectionsdata(initialBatch, 0, isCancelled);
-      }
-    };
-
-    loadTab();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [selectedTab]);
-
-  const loadUserProfile = async () => {
-    try {
-      const supabaseProfile = await getUserProfile();
-      if (supabaseProfile) {
-        setUserAvatar({
-          seed: supabaseProfile.avatarSeed || "user1",
-          colorIndex: supabaseProfile.avatarColorIndex || 0,
-        });
-      }
-    } catch (error) {
-      console.error("Error loading user profile:", error);
+  const goToNext = () => {
+    if (currentIndex < stories.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+    } else {
+      onClose();
     }
   };
 
-  const fetchSectionsdata = async (batch, startIndex, isCancelled = false) => {
-    // Fetch in parallel
-    const promises = batch.map(async (section, index) => {
+  const goToPrev = () => {
+    if (currentIndex > 0) {
+      setCurrentIndex(currentIndex - 1);
+    }
+  };
+
+  if (!visible || !currentStory) return null;
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent={false}>
+      <View style={styles.storyViewerContainer}>
+        <StatusBar hidden />
+
+        {/* Progress bars */}
+        <View style={styles.storyProgressContainer}>
+          {stories.map((_, index) => (
+            <View key={index} style={styles.storyProgressBg}>
+              <Animated.View
+                style={[
+                  styles.storyProgressFill,
+                  {
+                    width: index < currentIndex ? "100%" : index === currentIndex
+                      ? progressAnim.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] })
+                      : "0%",
+                  },
+                ]}
+              />
+            </View>
+          ))}
+        </View>
+
+        {/* Header */}
+        <View style={styles.storyHeader}>
+          <View style={styles.storyHeaderLeft}>
+            <Image source={{ uri: currentStory.image }} style={styles.storyHeaderImage} />
+            <View>
+              <Text style={styles.storyHeaderTitle} numberOfLines={1}>{currentStory.title}</Text>
+              <Text style={styles.storyHeaderSub}>
+                {currentStory.episodeInfo && `${currentStory.episodeInfo} • `}{currentStory.airDateText}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity onPress={onClose} style={styles.storyHeaderBtn}>
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Static Image Content */}
+        <View style={styles.storyContent}>
+          <Image source={{ uri: currentStory.backdrop }} style={styles.storyBackdrop} resizeMode="cover" />
+        </View>
+
+        {/* Touch areas for navigation */}
+        <View style={styles.storyTouchAreas}>
+          <TouchableOpacity style={styles.storyTouchLeft} onPress={goToPrev} />
+          <TouchableOpacity style={styles.storyTouchRight} onPress={goToNext} />
+        </View>
+
+        {/* Bottom info */}
+        <LinearGradient colors={["transparent", "rgba(0,0,0,0.9)"]} style={styles.storyBottomGradient}>
+          {currentStory.airDateText && (
+            <View style={styles.storyEpisodeBadge}>
+              <Ionicons name="calendar" size={14} color="#37d1e4" />
+              <Text style={styles.storyEpisodeBadgeText}>{currentStory.airDateText}</Text>
+              {currentStory.episodeInfo && (
+                <Text style={styles.storyEpisodeNumber}>{currentStory.episodeInfo}</Text>
+              )}
+            </View>
+          )}
+          <Text style={styles.storyBottomTitle}>{currentStory.title}</Text>
+          {currentStory.episodeName && (
+            <Text style={styles.storyEpisodeName}>"{currentStory.episodeName}"</Text>
+          )}
+          <Text style={styles.storyBottomOverview} numberOfLines={3}>{currentStory.overview}</Text>
+          <View style={styles.storyBottomButtons}>
+            <TouchableOpacity
+              style={styles.storyWatchBtn}
+              onPress={() => {
+                onClose();
+                navigation.navigate("ShowDetails", { show: currentStory });
+              }}
+            >
+              <Ionicons name="play" size={18} color="#000" />
+              <Text style={styles.storyWatchBtnText}>View Details</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.storyInfoBtn}>
+              <Ionicons name="add" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </LinearGradient>
+      </View>
+    </Modal>
+  );
+});
+
+
+const FeaturedHero = memo(({ item, navigation }) => {
+  const [inList, setInList] = useState(false);
+
+  useEffect(() => {
+    if (item?.id && item?.type) {
+      checkListStatus();
+    }
+  }, [item?.id]);
+
+  const checkListStatus = async () => {
+    try {
+      const status = await isInList(item.id, item.type || "movie");
+      setInList(status);
+    } catch (error) {
+      console.error("Error checking list status:", error);
+    }
+  };
+
+  const handleListToggle = async () => {
+    if (!item) return;
+    const mediaType = item.type || "movie";
+    try {
+      if (inList) {
+        await removeFromList(item.id, mediaType);
+        setInList(false);
+      } else {
+        await addToList({ ...item, media_type: mediaType });
+        setInList(true);
+      }
+    } catch (error) {
+      console.error("Error toggling list:", error);
+    }
+  };
+
+  if (!item) return null;
+
+  return (
+    <View style={styles.heroContainer}>
+      <Image source={{ uri: item.backdrop || item.image }} style={styles.heroImage} resizeMode="cover" />
+      <LinearGradient colors={["transparent", "rgba(1,14,31,0.8)", "#010e1f"]} locations={[0.4, 0.75, 1]} style={styles.heroGradient}>
+        <View style={styles.heroContent}>
+          <Text style={styles.heroTitle}>{item.title}</Text>
+          <Text style={styles.heroGenres}>Gritty • Dark • Thriller • Drama • Crime</Text>
+          <View style={styles.heroButtons}>
+            <TouchableOpacity style={styles.myListButton} onPress={handleListToggle}>
+              <Ionicons name={inList ? "checkmark" : "add"} size={24} color="#fff" />
+              <Text style={styles.myListText}>{inList ? "Added" : "My List"}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.playButton} onPress={() => navigation.navigate("ShowDetails", { show: item })}>
+              <Ionicons name="play" size={20} color="#000" />
+              <Text style={styles.playButtonText}>Play</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.infoButton} onPress={() => navigation.navigate("ShowDetails", { show: item })}>
+              <Ionicons name="information-circle-outline" size={24} color="#fff" />
+              <Text style={styles.infoText}>Info</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+});
+
+const TabContent = memo(({ tabId, sections, featuredItem, navigation, myListData, myListLoading, continueWatchingData, continueWatchingLoading, top10Data, top10Loading, splitHeroData, storiesData, onStoryPress }) => {
+  if (tabId === "My List") {
+    return (
+      <ScrollView style={styles.myListContainer} showsVerticalScrollIndicator={false}>
+        <View style={styles.tabHeader}>
+          <Text style={styles.tabHeaderTitle}>My List</Text>
+        </View>
+        {myListLoading ? (
+          <SkeletonRow />
+        ) : myListData && myListData.length > 0 ? (
+          <View style={styles.section}>
+            <FlatList
+              data={myListData}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.myListCard}
+                  onPress={() => navigation.navigate("ShowDetails", { show: item })}
+                  activeOpacity={0.8}
+                >
+                  <Image
+                    source={{ uri: `https://image.tmdb.org/t/p/w500${item.poster_path}` }}
+                    style={styles.myListImage}
+                    resizeMode="cover"
+                  />
+                </TouchableOpacity>
+              )}
+              keyExtractor={(item) => `${item.media_id}-${item.media_type}`}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.showList}
+            />
+          </View>
+        ) : (
+          <View style={styles.emptyList}>
+            <Ionicons name="bookmark-outline" size={64} color="#555" />
+            <Text style={styles.emptyListText}>Your list is empty</Text>
+            <Text style={styles.emptyListSubtext}>Add movies and shows to your list to watch later</Text>
+          </View>
+        )}
+      </ScrollView>
+    );
+  }
+
+  return (
+    <FlatList
+      data={sections}
+      renderItem={({ item }) => (
+        <HorizontalList
+          title={item.title}
+          data={item.data}
+          loading={item.loading}
+          onShowPress={(show) => navigation.navigate("ShowDetails", { show })}
+        />
+      )}
+      keyExtractor={(item, index) => `${tabId}-${item.id}-${index}`}
+      ListHeaderComponent={() => (
+        <View>
+          {tabId === "Home" && (
+            <>
+              <FeaturedHero item={featuredItem} navigation={navigation} />
+              <FranchiseRow navigation={navigation} />
+              <ContinueWatchingRow data={continueWatchingData} navigation={navigation} loading={continueWatchingLoading} />
+              <Top10Row data={top10Data} navigation={navigation} loading={top10Loading} />
+              <SplitHeroSection items={splitHeroData} navigation={navigation} />
+              <StoriesSection data={storiesData} navigation={navigation} onStoryPress={onStoryPress} />
+            </>
+          )}
+          {tabId !== "Home" && tabId !== "TV Shows" && tabId !== "Movies" && (
+            <View style={styles.tabHeader}>
+              <Text style={styles.tabHeaderTitle}>{tabId}</Text>
+            </View>
+          )}
+          {(tabId === "TV Shows" || tabId === "Movies") && (
+            <View style={styles.tabHeaderSpacer} />
+          )}
+        </View>
+      )}
+      contentContainerStyle={styles.listContent}
+      showsVerticalScrollIndicator={false}
+    />
+  );
+});
+
+const BottomNavBar = memo(({ activeIndex, onTabChange, indicatorAnim }) => {
+  const tabWidth = width / TABS.length;
+
+  return (
+    <View style={styles.bottomNav}>
+      <Animated.View
+        style={[
+          styles.navIndicator,
+          {
+            width: tabWidth - 16,
+            transform: [{
+              translateX: indicatorAnim.interpolate({
+                inputRange: [0, 1, 2, 3],
+                outputRange: [8, tabWidth + 8, tabWidth * 2 + 8, tabWidth * 3 + 8],
+              }),
+            }],
+          },
+        ]}
+      />
+
+      {TABS.map((tab, index) => {
+        const isActive = index === activeIndex;
+        return (
+          <TouchableOpacity
+            key={tab.id}
+            style={styles.navItem}
+            onPress={() => onTabChange(index)}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name={isActive ? tab.activeIcon : tab.icon}
+              size={24}
+              color={isActive ? "#fff" : "#888"}
+            />
+            <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>
+              {tab.label}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+});
+
+
+const HomeScreen = ({ navigation }) => {
+  const [activeTabIndex, setActiveTabIndex] = useState(0);
+  const [tabData, setTabData] = useState({});
+  const [featuredItem, setFeaturedItem] = useState(null);
+  const [myListData, setMyListData] = useState([]);
+  const [myListLoading, setMyListLoading] = useState(false);
+
+  // New state for additional sections
+  const [continueWatchingData, setContinueWatchingData] = useState([]);
+  const [continueWatchingLoading, setContinueWatchingLoading] = useState(true);
+  const [top10Data, setTop10Data] = useState([]);
+  const [top10Loading, setTop10Loading] = useState(true);
+  const [splitHeroData, setSplitHeroData] = useState([]);
+  const [storiesData, setStoriesData] = useState([]);
+  const [storyViewerVisible, setStoryViewerVisible] = useState(false);
+  const [storyInitialIndex, setStoryInitialIndex] = useState(0);
+
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const indicatorAnim = useRef(new Animated.Value(0)).current;
+
+  const currentTab = CONTENT_TABS[activeTabIndex]?.id || "Home";
+
+  useEffect(() => {
+    loadFeaturedItem();
+    loadContinueWatching();
+    loadTop10();
+    loadSplitHero();
+    loadStories();
+  }, []);
+
+  useEffect(() => {
+    loadTabData(currentTab);
+  }, [currentTab]);
+
+  const loadFeaturedItem = async () => {
+    try {
+      const data = await fetchTrending("week");
+      if (data && data.length > 0) {
+        setFeaturedItem(data[0]);
+      }
+    } catch (e) {
+      console.error("Error loading featured:", e);
+    }
+  };
+
+  const loadContinueWatching = async () => {
+    setContinueWatchingLoading(true);
+    try {
+      const data = await getContinueWatching();
+      const transformedData = data.map(item => ({
+        ...item,
+        id: item.media_id,
+        type: item.media_type,
+        title: item.title,
+        image: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
+        backdrop: item.backdrop_path ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}` : null,
+        progress: item.progress_percent || 30,
+      }));
+      setContinueWatchingData(transformedData);
+    } catch (e) {
+      console.error("Error loading continue watching:", e);
+    } finally {
+      setContinueWatchingLoading(false);
+    }
+  };
+
+  const loadTop10 = async () => {
+    setTop10Loading(true);
+    try {
+      const data = await fetchTop10ThisWeek();
+      setTop10Data(data);
+    } catch (e) {
+      console.error("Error loading top 10:", e);
+    } finally {
+      setTop10Loading(false);
+    }
+  };
+
+  const loadSplitHero = async () => {
+    try {
+      const data = await fetchSplitHeroTitles();
+      setSplitHeroData(data);
+    } catch (e) {
+      console.error("Error loading split hero:", e);
+    }
+  };
+
+  const loadStories = async () => {
+    try {
+      const data = await fetchUpcomingEpisodes();
+      setStoriesData(data);
+    } catch (e) {
+      console.error("Error loading stories:", e);
+    }
+  };
+
+  const handleStoryPress = useCallback((item, index) => {
+    setStoryInitialIndex(index);
+    setStoryViewerVisible(true);
+  }, []);
+
+  const loadMyList = async () => {
+    setMyListLoading(true);
+    try {
+      const data = await getUserList();
+      const transformedData = data.map(item => ({
+        ...item,
+        id: item.media_id,
+        type: item.media_type,
+        image: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
+        backdrop: item.backdrop_path ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}` : null,
+      }));
+      setMyListData(transformedData);
+    } catch (e) {
+      console.error("Error loading my list:", e);
+    } finally {
+      setMyListLoading(false);
+    }
+  };
+
+  const loadTabData = async (tabId) => {
+    if (tabId === "My List") {
+      loadMyList();
+      return;
+    }
+
+    if (tabData[tabId]?.loaded) return;
+
+    const config = SECTIONS_CONFIG[tabId] || [];
+    if (config.length === 0) return;
+
+    setTabData(prev => ({
+      ...prev,
+      [tabId]: {
+        sections: config.map(item => ({ ...item, data: [], loading: true })),
+        loaded: false,
+      },
+    }));
+
+    const promises = config.map(async (section, index) => {
       try {
         const data = await section.fn(...(section.params || []));
-
-        // Update this specific section in state
-        setSections((prev) => {
-          const newSections = [...prev];
-          const targetIndex = startIndex + index;
-          if (newSections[targetIndex]) {
-            newSections[targetIndex] = {
-              ...newSections[targetIndex],
-              data,
-              loading: false,
-            };
+        setTabData(prev => {
+          const tabState = prev[tabId];
+          if (!tabState) return prev;
+          const newSections = [...tabState.sections];
+          if (newSections[index]) {
+            newSections[index] = { ...newSections[index], data, loading: false };
           }
-          return newSections;
+          return { ...prev, [tabId]: { ...tabState, sections: newSections, loaded: true } };
         });
       } catch (error) {
-        console.error(`Error loading section ${section.title}:`, error);
-        setSections((prev) => {
-          const newSections = [...prev];
-          const targetIndex = startIndex + index;
-          if (newSections[targetIndex]) {
-            newSections[targetIndex] = {
-              ...newSections[targetIndex],
-              loading: false,
-              error: true,
-            };
-          }
-          return newSections;
-        });
+        console.error(`Error loading ${section.title}:`, error);
       }
     });
 
     await Promise.all(promises);
   };
 
-  const handleLoadMore = () => {
-    const config = SECTIONS_CONFIG[selectedTab];
-    if (loadedCount >= config.length) return;
+  const animateToTab = (newIndex) => {
+    Animated.parallel([
+      Animated.timing(slideAnim, {
+        toValue: -newIndex * width,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.timing(indicatorAnim, {
+        toValue: newIndex,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
-    const nextBatch = config.slice(
-      loadedCount,
-      loadedCount + INCREMENTAL_LOAD_COUNT
-    );
-    if (nextBatch.length === 0) return;
-
-    // Add skeletons for next batch
-    const newPlaceholders = nextBatch.map((item) => ({
-      ...item,
-      data: [],
-      loading: true,
-    }));
-
-    const startIndex = loadedCount;
-    setSections((prev) => [...prev, ...newPlaceholders]);
-    setLoadedCount((prev) => prev + nextBatch.length);
-
-    // Fetch
-    fetchSectionsdata(nextBatch, startIndex);
+    setActiveTabIndex(newIndex);
   };
 
-  const handleBrowseOption = (option) => {
-    setShowBrowseMenu(false);
-    if (option === "TV Shows" || option === "Movies") {
-      setSelectedTab(option);
-    } else if (option === "My List") {
-      navigation.navigate("MyList");
-    } else if (option === "Manage Profiles") {
-      navigation.navigate("UserProfile");
+  const handleTabChange = (index) => {
+    if (index >= 0 && index < CONTENT_TABS.length) {
+      animateToTab(index);
     }
   };
 
-  const handleSignOut = () => {
-    setShowBrowseMenu(false);
-    navigation.navigate("Auth");
-  };
-
-  const renderHeader = () => (
-    <View>
-      {selectedTab === "Home" && (
-        <>
-          <FeaturedCarousel
-            data={featuredData}
-            loading={featuredLoading}
-            navigation={navigation}
-          />
-          <BrandSection navigation={navigation} />
-        </>
-      )}
-    </View>
-  );
-
   return (
-    <SafeAreaView style={styles.container} edges={["top"]}>
-      <StatusBar barStyle="light-content" />
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* Top Navigation Bar */}
-      <View style={styles.topNav}>
-        <View style={styles.leftSection}>
-          <TouchableOpacity
-            onPress={() => {
-              setSelectedTab("Home");
-              setShowBrowseMenu(false);
-            }}
-          >
-            <Text style={styles.logo}>LeeTV</Text>
+      <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
+        <View style={styles.header}>
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity onPress={() => navigation.navigate("Search")} style={styles.headerIcon}>
+            <Ionicons name="search" size={24} color="#fff" />
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.browseButton}
-            onPress={() => setShowBrowseMenu(!showBrowseMenu)}
-          >
-            <Text style={styles.browseText}>Browse</Text>
-            <Text style={styles.dropdownArrow}>▼</Text>
+          <TouchableOpacity onPress={() => navigation.navigate("EditProfile")} style={styles.headerIcon}>
+            <Ionicons name="person-circle-outline" size={28} color="#fff" />
           </TouchableOpacity>
         </View>
+      </SafeAreaView>
 
-        <View style={styles.rightSection}>
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={() => navigation.navigate("Search")}
-          >
-            <SearchIcon size={22} color={colors.white} />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.profileButton}
-            onPress={() => navigation.navigate("UserProfile")}
-          >
-            <Image
-              source={{
-                uri: `https://api.dicebear.com/7.x/avataaars/png?seed=${userAvatar.seed}&size=80&backgroundColor=transparent`,
-              }}
-              style={styles.profileAvatar}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-        </View>
+      <View style={styles.contentArea}>
+        <Animated.View
+          style={[
+            styles.tabsContainer,
+            { transform: [{ translateX: slideAnim }] },
+          ]}
+        >
+          {CONTENT_TABS.map((tab) => (
+            <View key={tab.id} style={styles.tabPane}>
+              <TabContent
+                tabId={tab.id}
+                sections={tabData[tab.id]?.sections || []}
+                featuredItem={featuredItem}
+                navigation={navigation}
+                myListData={myListData}
+                myListLoading={myListLoading}
+                continueWatchingData={continueWatchingData}
+                continueWatchingLoading={continueWatchingLoading}
+                top10Data={top10Data}
+                top10Loading={top10Loading}
+                splitHeroData={splitHeroData}
+                storiesData={storiesData}
+                onStoryPress={handleStoryPress}
+              />
+            </View>
+          ))}
+        </Animated.View>
       </View>
 
-      {/* Browse Dropdown Menu */}
-      {showBrowseMenu && (
-        <View style={styles.dropdownContainer}>
-          <Pressable
-            style={styles.dropdownOverlay}
-            onPress={() => setShowBrowseMenu(false)}
-          />
-          <View style={styles.dropdownMenu}>
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => handleBrowseOption("TV Shows")}
-            >
-              <Text style={styles.dropdownText}>TV Shows</Text>
-            </TouchableOpacity>
-            <View style={styles.dropdownDivider} />
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => handleBrowseOption("Movies")}
-            >
-              <Text style={styles.dropdownText}>Movies</Text>
-            </TouchableOpacity>
-            <View style={styles.dropdownDivider} />
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => handleBrowseOption("My List")}
-            >
-              <Text style={styles.dropdownText}>My List</Text>
-            </TouchableOpacity>
-            <View style={styles.dropdownDivider} />
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={() => handleBrowseOption("Manage Profiles")}
-            >
-              <Text style={styles.dropdownText}>Manage Profiles</Text>
-            </TouchableOpacity>
-            <View style={styles.dropdownDivider} />
-            <TouchableOpacity
-              style={styles.dropdownItem}
-              onPress={handleSignOut}
-            >
-              <Text style={[styles.dropdownText, styles.signOutText]}>
-                Sign Out
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Main Content List */}
-      <FlatList
-        data={sections}
-        renderItem={({ item }) => (
-          <HorizontalList
-            title={item.title}
-            data={item.data}
-            loading={item.loading}
-            onShowPress={(show) => navigation.navigate("ShowDetails", { show })}
-          />
-        )}
-        keyExtractor={(item, index) => `${selectedTab}-${item.id}-${index}`}
-        ListHeaderComponent={renderHeader}
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.5}
-        contentContainerStyle={{ paddingBottom: 20 }}
-        showsVerticalScrollIndicator={false}
-        extraData={selectedTab}
+      <StoryViewer
+        visible={storyViewerVisible}
+        stories={storiesData}
+        initialIndex={storyInitialIndex}
+        onClose={() => setStoryViewerVisible(false)}
+        navigation={navigation}
       />
-    </SafeAreaView>
+
+      <BottomNavBar
+        activeIndex={activeTabIndex}
+        onTabChange={handleTabChange}
+        indicatorAnim={indicatorAnim}
+      />
+    </View>
   );
 };
 
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  topNav: {
+  container: { flex: 1, backgroundColor: "#010e1f" },
+  headerSafeArea: { backgroundColor: "transparent", position: "absolute", top: 0, left: 0, right: 0, zIndex: 100 },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 8 },
+  headerIcon: { padding: 8 },
+  contentArea: { flex: 1, overflow: "hidden" },
+  tabsContainer: { flexDirection: "row", width: width * CONTENT_TABS.length, flex: 1 },
+  tabPane: { width, flex: 1 },
+  listContent: { paddingBottom: 100 },
+  heroContainer: { width, height: height * 0.65 },
+  heroImage: { width: "100%", height: "100%" },
+  heroGradient: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", paddingBottom: 20 },
+  heroContent: { alignItems: "center", paddingHorizontal: 20 },
+  heroTitle: { color: "#fff", fontSize: 32, fontWeight: "bold", textAlign: "center", marginBottom: 8 },
+  heroGenres: { color: "#ccc", fontSize: 11, textAlign: "center", marginBottom: 16 },
+  heroButtons: { flexDirection: "row", alignItems: "center", gap: 24 },
+  myListButton: { alignItems: "center" },
+  myListText: { color: "#fff", fontSize: 10, marginTop: 4 },
+  playButton: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingVertical: 8, paddingHorizontal: 20, borderRadius: 4, gap: 6 },
+  playButtonText: { color: "#000", fontSize: 14, fontWeight: "700" },
+  infoButton: { alignItems: "center" },
+  infoText: { color: "#fff", fontSize: 10, marginTop: 4 },
+  franchiseSection: { marginTop: 16, marginBottom: 24 },
+  franchiseList: { paddingHorizontal: 16, gap: 16 },
+  franchiseItem: { alignItems: "center" },
+  franchiseCircle: { width: 70, height: 70, borderRadius: 35, overflow: "hidden", borderWidth: 2, borderColor: "#1a3a5c" },
+  franchiseImage: { width: "100%", height: "100%" },
+  section: { marginBottom: 24 },
+  sectionTitle: { color: "#fff", fontSize: 16, fontWeight: "700", marginLeft: 16, marginBottom: 12 },
+  showList: { paddingHorizontal: 16, gap: 8 },
+  showCard: { width: 110, height: 160, borderRadius: 4, overflow: "hidden", backgroundColor: "#0a1929" },
+  showImage: { width: "100%", height: "100%" },
+  tabHeader: { paddingHorizontal: 16, paddingTop: 100, paddingBottom: 16 },
+  tabHeaderSpacer: { paddingTop: 80 },
+  tabHeaderTitle: { color: "#fff", fontSize: 28, fontWeight: "bold" },
+  bottomNav: {
     flexDirection: "row",
+    justifyContent: "space-around",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: colors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.1)",
-    zIndex: 2000,
-  },
-  leftSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 20,
-  },
-  logo: {
-    fontSize: 26,
-    fontWeight: "bold",
-    color: colors.netflixRed,
-    letterSpacing: 3,
-  },
-  browseButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  browseText: {
-    color: colors.white,
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  dropdownArrow: {
-    color: colors.white,
-    fontSize: 10,
-  },
-  rightSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 20,
-  },
-  iconButton: {
-    padding: 6,
-  },
-  profileButton: {
+    backgroundColor: "#010e1f",
+    paddingTop: 12,
+    paddingBottom: 28,
+    borderTopWidth: 0.5,
+    borderTopColor: "#1a3a5c",
     position: "relative",
   },
-  profileAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 4,
-    backgroundColor: "#1B264F",
+  navIndicator: { position: "absolute", top: 0, left: 0, height: 3, backgroundColor: "#37d1e4", borderRadius: 2 },
+  navItem: { alignItems: "center", flex: 1, zIndex: 1 },
+  navLabel: { color: "#888", fontSize: 10, marginTop: 4 },
+  navLabelActive: { color: "#fff" },
+  myListContainer: { flex: 1, paddingTop: 80 },
+  myListCard: { width: 110, height: 160, borderRadius: 4, overflow: "hidden", backgroundColor: "#0a1929" },
+  myListImage: { width: "100%", height: "100%" },
+  emptyList: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 40 },
+  emptyListText: { color: "#fff", fontSize: 18, fontWeight: "600", marginTop: 16 },
+  emptyListSubtext: { color: "#888", fontSize: 14, textAlign: "center", marginTop: 8 },
+
+  // Continue Watching styles
+  continueCard: { width: 180, height: 100, borderRadius: 6, overflow: "hidden", backgroundColor: "#0a1929", marginRight: 8 },
+  continueImage: { width: "100%", height: "100%" },
+  continueGradient: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", padding: 8 },
+  continueTitle: { color: "#fff", fontSize: 12, fontWeight: "600", marginBottom: 6 },
+  progressBarContainer: { height: 3, backgroundColor: "rgba(255,255,255,0.3)", borderRadius: 2 },
+  progressBar: { height: "100%", backgroundColor: "#37d1e4", borderRadius: 2 },
+  continuePlayIcon: { position: "absolute", top: "50%", left: "50%", marginTop: -16, marginLeft: -16, width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: "#fff" },
+
+  // Top 10 styles - Netflix exact style with white numbers and bold outline
+  top10Header: { flexDirection: "row", alignItems: "center", marginLeft: 16, marginBottom: 12 },
+  top10Badge: { backgroundColor: "#e50914", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 2, marginLeft: 8 },
+  top10BadgeText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
+  top10List: { paddingHorizontal: 16 },
+  top10Card: { flexDirection: "row", alignItems: "flex-end", marginRight: 4 },
+  top10NumberBg: { width: 50, height: 160, justifyContent: "flex-end", alignItems: "flex-end", marginRight: -22, zIndex: 1 },
+  top10Number: {
+    fontSize: 100,
+    fontWeight: "900",
+    fontStyle: "italic",
+    color: "#fff",
+    textShadowColor: "#000",
+    textShadowOffset: { width: 3, height: 3 },
+    textShadowRadius: 1,
+    includeFontPadding: false,
+    lineHeight: 100,
   },
-  dropdownContainer: {
-    position: "absolute",
-    top: 60,
-    left: 20,
-    zIndex: 3000,
-  },
-  dropdownOverlay: {
-    position: "absolute",
-    top: -60,
-    left: -width,
-    width: width * 2,
-    height: 1000,
-  },
-  dropdownMenu: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: 4,
-    minWidth: 180,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  dropdownItem: {
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-  },
-  dropdownText: {
-    color: colors.white,
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  signOutText: {
-    color: colors.lightGray,
-  },
-  dropdownDivider: {
-    height: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-  },
-  carouselContainer: {
-    width: width,
-    height: width * 1.1,
-    position: "relative",
-    marginBottom: 10,
-  },
-  featuredSlide: {
-    width: width,
-    height: width * 1.1,
-  },
-  featuredImage: {
-    width: "100%",
-    height: "100%",
-  },
-  featuredOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "flex-end",
-    paddingBottom: 40,
-    paddingHorizontal: 20,
-    backgroundColor: "rgba(0,0,0,0.3)", // Fallback
-  },
-  featuredInfo: {
-    alignItems: "flex-start",
-  },
-  featuredTitle: {
-    color: colors.white,
-    fontSize: 26,
-    fontWeight: "bold",
-    marginBottom: 12,
-    textShadowColor: "rgba(0, 0, 0, 0.9)",
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 6,
-  },
-  playButtonInline: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.white,
-    paddingVertical: 8,
-    paddingHorizontal: 24,
-    borderRadius: 4,
-    gap: 6,
-  },
-  playButtonText: {
-    color: colors.black,
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  carouselDots: {
-    position: "absolute",
-    bottom: 12,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-  },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "rgba(255, 255, 255, 0.5)",
-  },
-  activeDot: {
-    backgroundColor: colors.white,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  brandSection: {
-    marginVertical: 25,
-  },
-  brandList: {
-    paddingHorizontal: 20,
-    paddingVertical: 5,
-  },
-  brandCard: {
-    width: 200,
-    height: 110,
-    marginRight: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 12,
-    overflow: "hidden",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-    elevation: 5,
-  },
-  brandImage: {
-    width: "100%",
-    height: "100%",
-  },
-  brandPlaceholder: {
-    color: colors.white,
-    fontSize: 16,
-    fontWeight: "bold",
-    textAlign: "center",
-  },
-  section: {
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    color: colors.white,
-    fontSize: 20,
-    fontWeight: "bold",
-    marginLeft: 20,
-    marginBottom: 12,
-    letterSpacing: 0.5,
-  },
-  showList: {
-    paddingHorizontal: 20,
-  },
-  showCard: {
-    width: 110,
-    marginRight: 10,
-    borderRadius: 6,
-    overflow: "hidden",
-    position: "relative",
-    backgroundColor: "#1a1a1a",
-  },
-  showImage: {
-    width: 110,
-    height: 150,
-    borderRadius: 6,
-  },
-  showOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    padding: 8,
-  },
-  showTitle: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  showRatingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  showRating: {
-    color: colors.lightGray,
-    fontSize: 11,
-    fontWeight: "600",
-  },
+  top10Image: { width: 110, height: 160, borderRadius: 6, backgroundColor: "#0a1929" },
+
+  // Featured Section styles - Premium spotlight cards with transparent borders
+  featuredContainer: { marginBottom: 24 },
+  featuredHeader: { paddingHorizontal: 16, marginBottom: 16 },
+  featuredTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  featuredSectionTitle: { color: "#fff", fontSize: 20, fontWeight: "bold" },
+  featuredSubtitle: { color: "#888", fontSize: 12, marginTop: 4 },
+  featuredScroll: { paddingHorizontal: 16, gap: 12 },
+  featuredCard: { width: width * 0.88, height: 260, borderRadius: 8, overflow: "hidden", backgroundColor: "transparent", borderWidth: 0 },
+  featuredImage: { width: "100%", height: "100%" },
+  featuredGradient: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", padding: 16 },
+  featuredContent: { gap: 6 },
+  featuredTopRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  featuredSpotlight: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,215,0,0.15)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, gap: 4, borderWidth: 1, borderColor: "rgba(255,215,0,0.4)" },
+  featuredSpotlightText: { color: "#FFD700", fontSize: 10, fontWeight: "bold", letterSpacing: 0.5 },
+  featuredEditorPick: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(55,209,228,0.15)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, gap: 4, borderWidth: 1, borderColor: "rgba(55,209,228,0.4)" },
+  featuredEditorText: { color: "#37d1e4", fontSize: 10, fontWeight: "bold", letterSpacing: 0.5 },
+  featuredTypePill: { backgroundColor: "rgba(255,255,255,0.1)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, borderWidth: 0 },
+  featuredTypeText: { color: "#fff", fontSize: 10, fontWeight: "600", letterSpacing: 1 },
+  featuredTitle: { color: "#fff", fontSize: 24, fontWeight: "bold" },
+  featuredMetaRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  featuredRatingBox: { flexDirection: "row", alignItems: "center", gap: 4 },
+  featuredRatingText: { color: "#FFD700", fontSize: 14, fontWeight: "700" },
+  featuredYear: { color: "#aaa", fontSize: 13 },
+  featuredDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: "#555" },
+  featuredGenre: { color: "#37d1e4", fontSize: 13, fontWeight: "500" },
+  featuredOverview: { color: "#bbb", fontSize: 12, lineHeight: 17 },
+  featuredActions: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 6 },
+  featuredPlayBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingVertical: 8, paddingHorizontal: 20, borderRadius: 4, gap: 6 },
+  featuredPlayText: { color: "#000", fontSize: 14, fontWeight: "700" },
+  featuredMoreBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.08)", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 4, gap: 4, borderWidth: 0 },
+  featuredMoreText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  featuredAddBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.05)", justifyContent: "center", alignItems: "center", borderWidth: 0 },
+
+  // Stories styles - Episode Updates
+  storiesContainer: { marginBottom: 24 },
+  storiesList: { paddingHorizontal: 16, gap: 12 },
+  storyItem: { alignItems: "center", width: 76 },
+  storyRing: { width: 68, height: 68, borderRadius: 34, padding: 3, justifyContent: "center", alignItems: "center" },
+  storyImageContainer: { width: 60, height: 60, borderRadius: 30, overflow: "hidden", borderWidth: 2, borderColor: "#010e1f" },
+  storyImage: { width: "100%", height: "100%" },
+  storyTitle: { color: "#fff", fontSize: 10, marginTop: 4, textAlign: "center" },
+  storyDateBadge: { backgroundColor: "#e50914", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, marginTop: 2 },
+  storyDateText: { color: "#fff", fontSize: 8, fontWeight: "bold" },
+
+  // Story Viewer styles
+  storyViewerContainer: { flex: 1, backgroundColor: "#000" },
+  storyProgressContainer: { flexDirection: "row", paddingHorizontal: 8, paddingTop: 50, gap: 4, zIndex: 10 },
+  storyProgressBg: { flex: 1, height: 2, backgroundColor: "rgba(255,255,255,0.3)", borderRadius: 1 },
+  storyProgressFill: { height: "100%", backgroundColor: "#fff", borderRadius: 1 },
+  storyHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 12, paddingVertical: 12, zIndex: 10 },
+  storyHeaderLeft: { flexDirection: "row", alignItems: "center", flex: 1 },
+  storyHeaderImage: { width: 36, height: 36, borderRadius: 18, marginRight: 10, borderWidth: 2, borderColor: "#37d1e4" },
+  storyHeaderTitle: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  storyHeaderSub: { color: "#37d1e4", fontSize: 11, marginTop: 1, fontWeight: "500" },
+  storyHeaderBtn: { padding: 4 },
+  storyContent: { flex: 1, backgroundColor: "#000" },
+  storyBackdrop: { width: "100%", height: "100%" },
+  storyTouchAreas: { ...StyleSheet.absoluteFillObject, flexDirection: "row", zIndex: 5 },
+  storyTouchLeft: { flex: 1 },
+  storyTouchRight: { flex: 1 },
+  storyBottomGradient: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 16, paddingBottom: 50, paddingTop: 80, zIndex: 10 },
+  storyEpisodeBadge: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  storyEpisodeBadgeText: { color: "#37d1e4", fontSize: 14, fontWeight: "bold" },
+  storyEpisodeNumber: { color: "#fff", fontSize: 12, fontWeight: "600", backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
+  storyBottomTitle: { color: "#fff", fontSize: 22, fontWeight: "bold", marginBottom: 4 },
+  storyEpisodeName: { color: "#aaa", fontSize: 14, fontStyle: "italic", marginBottom: 8 },
+  storyBottomOverview: { color: "#ccc", fontSize: 13, lineHeight: 18, marginBottom: 16 },
+  storyBottomButtons: { flexDirection: "row", alignItems: "center", gap: 12 },
+  storyWatchBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingVertical: 12, paddingHorizontal: 24, borderRadius: 4, gap: 8 },
+  storyWatchBtnText: { color: "#000", fontSize: 15, fontWeight: "700" },
+  storyInfoBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.4)" },
 });
 
 export default HomeScreen;

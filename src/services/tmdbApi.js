@@ -3,6 +3,23 @@ const API_KEY = "0dcd66e3f671ceaa6fe0c1bc8d0e854d";
 const BASE_URL = "https://api.themoviedb.org/3";
 const IMAGE_BASE_URL = "https://image.tmdb.org/t/p";
 
+// Safe JSON parsing helper to prevent "Body has already been read" errors
+const safeJsonParse = async (response) => {
+  try {
+    // Clone the response to avoid body already read errors
+    const clonedResponse = response.clone();
+    return await clonedResponse.json();
+  } catch (error) {
+    // If clone fails, try original response
+    try {
+      return await response.json();
+    } catch (e) {
+      console.error("Failed to parse JSON response:", e);
+      return { results: [] };
+    }
+  }
+};
+
 // Helper function to build image URLs
 export const getImageUrl = (path, size = "w342") => {
   if (!path || path === undefined || path === "null")
@@ -33,8 +50,8 @@ export const fetchTrending = async (timeWindow = "week") => {
       year: item.release_date
         ? new Date(item.release_date).getFullYear()
         : item.first_air_date
-        ? new Date(item.first_air_date).getFullYear()
-        : "N/A",
+          ? new Date(item.first_air_date).getFullYear()
+          : "N/A",
       type: item.media_type,
       overview: item.overview,
     }));
@@ -309,8 +326,8 @@ export const searchContent = async (query) => {
         year: item.release_date
           ? new Date(item.release_date).getFullYear()
           : item.first_air_date
-          ? new Date(item.first_air_date).getFullYear()
-          : "N/A",
+            ? new Date(item.first_air_date).getFullYear()
+            : "N/A",
         type: item.media_type,
         overview: item.overview,
       }));
@@ -623,7 +640,170 @@ export const fetchAnime = async (page = 1) => {
       `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=16&with_origin_country=JP&page=${page}&sort_by=popularity.desc`
     );
     const data = await response.json();
-    return data.results.map((show) => ({
+    return {
+      results: data.results.map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      })),
+      totalPages: Math.min(data.total_pages, 25), // Cap at 25 pages (500 items)
+      totalResults: data.total_results,
+    };
+  } catch (error) {
+    console.error("Error fetching anime:", error);
+    return { results: [], totalPages: 0, totalResults: 0 };
+  }
+};
+
+// Fetch all anime (500 items with pagination support)
+export const fetchAllAnime = async (targetCount = 500) => {
+  try {
+    const totalPages = Math.ceil(targetCount / 20); // 20 results per page
+    const allAnime = [];
+
+    // Fetch pages in batches of 5 to avoid rate limiting
+    for (let batch = 0; batch < Math.ceil(totalPages / 5); batch++) {
+      const startPage = batch * 5 + 1;
+      const endPage = Math.min(startPage + 4, totalPages);
+      const pagePromises = [];
+
+      for (let page = startPage; page <= endPage; page++) {
+        pagePromises.push(
+          fetch(
+            `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=16&with_origin_country=JP&page=${page}&sort_by=popularity.desc`
+          ).then((res) => safeJsonParse(res))
+        );
+      }
+
+      const results = await Promise.all(pagePromises);
+      results.forEach((data) => {
+        if (data.results) {
+          allAnime.push(
+            ...data.results.map((show) => ({
+              id: show.id,
+              title: show.name,
+              image: getImageUrl(show.poster_path, "w342"),
+              backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+              rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+              year: show.first_air_date
+                ? new Date(show.first_air_date).getFullYear()
+                : "N/A",
+              type: "tv",
+              overview: show.overview,
+            }))
+          );
+        }
+      });
+    }
+
+    // Remove duplicates and limit to target count
+    const uniqueAnime = Array.from(
+      new Map(allAnime.map((item) => [item.id, item])).values()
+    );
+    return uniqueAnime.slice(0, targetCount);
+  } catch (error) {
+    console.error("Error fetching all anime:", error);
+    return [];
+  }
+};
+
+// Fetch Netflix content (network ID: 213)
+export const fetchNetflix = async (page = 1) => {
+  try {
+    const response = await fetch(
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=213&page=${page}&sort_by=popularity.desc`
+    );
+    const data = await response.json();
+    return {
+      results: data.results.map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      })),
+      totalPages: Math.min(data.total_pages, 15), // Cap at 15 pages (300 items)
+      totalResults: data.total_results,
+    };
+  } catch (error) {
+    console.error("Error fetching Netflix content:", error);
+    return { results: [], totalPages: 0, totalResults: 0 };
+  }
+};
+
+// Fetch Hulu content (network ID: 453)
+export const fetchHulu = async (page = 1) => {
+  try {
+    const response = await fetch(
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=453&page=${page}&sort_by=popularity.desc`
+    );
+    const data = await response.json();
+    return {
+      results: data.results.map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      })),
+      totalPages: Math.min(data.total_pages, 10), // Cap at 10 pages (200 items)
+      totalResults: data.total_results,
+    };
+  } catch (error) {
+    console.error("Error fetching Hulu content:", error);
+    return { results: [], totalPages: 0, totalResults: 0 };
+  }
+};
+
+// Fetch DC content (company ID: 429 - DC Entertainment)
+export const fetchDC = async (page = 1) => {
+  try {
+    // Fetch both movies and TV shows from DC
+    const [moviesResponse, tvResponse] = await Promise.all([
+      fetch(
+        `${BASE_URL}/discover/movie?api_key=${API_KEY}&with_companies=429&page=${page}&sort_by=popularity.desc`
+      ),
+      fetch(
+        `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_companies=429&page=${page}&sort_by=popularity.desc`
+      ),
+    ]);
+
+    const [moviesData, tvData] = await Promise.all([
+      moviesResponse.json(),
+      tvResponse.json(),
+    ]);
+
+    const movies = moviesData.results.map((movie) => ({
+      id: movie.id,
+      title: movie.title,
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+      rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+      year: movie.release_date
+        ? new Date(movie.release_date).getFullYear()
+        : "N/A",
+      type: "movie",
+      overview: movie.overview,
+    }));
+
+    const tvShows = tvData.results.map((show) => ({
       id: show.id,
       title: show.name,
       image: getImageUrl(show.poster_path, "w342"),
@@ -635,9 +815,346 @@ export const fetchAnime = async (page = 1) => {
       type: "tv",
       overview: show.overview,
     }));
+
+    // Combine and sort by popularity (rating as proxy)
+    const combined = [...movies, ...tvShows].sort(
+      (a, b) => parseFloat(b.rating) - parseFloat(a.rating)
+    );
+
+    return {
+      results: combined,
+      totalPages: Math.max(moviesData.total_pages, tvData.total_pages),
+      totalResults: moviesData.total_results + tvData.total_results,
+    };
   } catch (error) {
-    console.error("Error fetching anime:", error);
-    return [];
+    console.error("Error fetching DC content:", error);
+    return { results: [], totalPages: 0, totalResults: 0 };
+  }
+};
+
+// Fetch Marvel content (company IDs: 420 - Marvel Studios, 7505 - Marvel Entertainment)
+export const fetchMarvel = async (page = 1) => {
+  try {
+    // Fetch both movies and TV shows from Marvel
+    const [moviesResponse, tvResponse] = await Promise.all([
+      fetch(
+        `${BASE_URL}/discover/movie?api_key=${API_KEY}&with_companies=420|7505&page=${page}&sort_by=popularity.desc`
+      ),
+      fetch(
+        `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_companies=420|7505&page=${page}&sort_by=popularity.desc`
+      ),
+    ]);
+
+    const [moviesData, tvData] = await Promise.all([
+      moviesResponse.json(),
+      tvResponse.json(),
+    ]);
+
+    const movies = moviesData.results.map((movie) => ({
+      id: movie.id,
+      title: movie.title,
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+      rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+      year: movie.release_date
+        ? new Date(movie.release_date).getFullYear()
+        : "N/A",
+      type: "movie",
+      overview: movie.overview,
+    }));
+
+    const tvShows = tvData.results.map((show) => ({
+      id: show.id,
+      title: show.name,
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+      rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+      year: show.first_air_date
+        ? new Date(show.first_air_date).getFullYear()
+        : "N/A",
+      type: "tv",
+      overview: show.overview,
+    }));
+
+    // Combine and sort by popularity (rating as proxy)
+    const combined = [...movies, ...tvShows].sort(
+      (a, b) => parseFloat(b.rating) - parseFloat(a.rating)
+    );
+
+    return {
+      results: combined,
+      totalPages: Math.max(moviesData.total_pages, tvData.total_pages),
+      totalResults: moviesData.total_results + tvData.total_results,
+    };
+  } catch (error) {
+    console.error("Error fetching Marvel content:", error);
+    return { results: [], totalPages: 0, totalResults: 0 };
+  }
+};
+
+// Fetch Star Wars content (via search)
+export const fetchStarWars = async (page = 1) => {
+  try {
+    // Fetch both movies and TV shows via search
+    const [moviesResponse, tvResponse] = await Promise.all([
+      fetch(
+        `${BASE_URL}/search/movie?api_key=${API_KEY}&query=Star%20Wars&page=${page}`
+      ),
+      fetch(
+        `${BASE_URL}/search/tv?api_key=${API_KEY}&query=Star%20Wars&page=${page}`
+      ),
+    ]);
+
+    const [moviesData, tvData] = await Promise.all([
+      moviesResponse.json(),
+      tvResponse.json(),
+    ]);
+
+    const movies = moviesData.results.map((movie) => ({
+      id: movie.id,
+      title: movie.title,
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+      rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+      year: movie.release_date
+        ? new Date(movie.release_date).getFullYear()
+        : "N/A",
+      type: "movie",
+      overview: movie.overview,
+    }));
+
+    const tvShows = tvData.results.map((show) => ({
+      id: show.id,
+      title: show.name,
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+      rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+      year: show.first_air_date
+        ? new Date(show.first_air_date).getFullYear()
+        : "N/A",
+      type: "tv",
+      overview: show.overview,
+    }));
+
+    // Combine and sort by rating
+    const combined = [...movies, ...tvShows].sort(
+      (a, b) => parseFloat(b.rating) - parseFloat(a.rating)
+    );
+
+    return {
+      results: combined,
+      totalPages: Math.max(moviesData.total_pages, tvData.total_pages),
+      totalResults: moviesData.total_results + tvData.total_results,
+    };
+  } catch (error) {
+    console.error("Error fetching Star Wars content:", error);
+    return { results: [], totalPages: 0, totalResults: 0 };
+  }
+};
+
+// Fetch HBO Max/Max content (network IDs: 49 - HBO, 3186 - HBO Max)
+export const fetchHBOMax = async (page = 1) => {
+  try {
+    // Fetch from both HBO and HBO Max networks
+    const [hboResponse, maxResponse] = await Promise.all([
+      fetch(
+        `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=49&page=${page}&sort_by=popularity.desc`
+      ),
+      fetch(
+        `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=3186&page=${page}&sort_by=popularity.desc`
+      ),
+    ]);
+
+    const [hboData, maxData] = await Promise.all([
+      hboResponse.json(),
+      maxResponse.json(),
+    ]);
+
+    const hboShows = hboData.results.map((show) => ({
+      id: show.id,
+      title: show.name,
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+      rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+      year: show.first_air_date
+        ? new Date(show.first_air_date).getFullYear()
+        : "N/A",
+      type: "tv",
+      overview: show.overview,
+    }));
+
+    const maxShows = maxData.results.map((show) => ({
+      id: show.id,
+      title: show.name,
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+      rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+      year: show.first_air_date
+        ? new Date(show.first_air_date).getFullYear()
+        : "N/A",
+      type: "tv",
+      overview: show.overview,
+    }));
+
+    // Combine and deduplicate
+    const allShows = [...hboShows, ...maxShows];
+    const uniqueShows = Array.from(
+      new Map(allShows.map((show) => [show.id, show])).values()
+    ).sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating));
+
+    return {
+      results: uniqueShows,
+      totalPages: Math.max(hboData.total_pages, maxData.total_pages),
+      totalResults: hboData.total_results + maxData.total_results,
+    };
+  } catch (error) {
+    console.error("Error fetching HBO Max content:", error);
+    return { results: [], totalPages: 0, totalResults: 0 };
+  }
+};
+
+// Fetch Paramount+ content (network ID: 4330)
+export const fetchParamountPlus = async (page = 1) => {
+  try {
+    const response = await fetch(
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=4330&page=${page}&sort_by=popularity.desc`
+    );
+    const data = await response.json();
+    return {
+      results: data.results.map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      })),
+      totalPages: Math.min(data.total_pages, 8), // Cap at 8 pages (150 items)
+      totalResults: data.total_results,
+    };
+  } catch (error) {
+    console.error("Error fetching Paramount+ content:", error);
+    return { results: [], totalPages: 0, totalResults: 0 };
+  }
+};
+
+// Fetch Apple TV+ content (network ID: 2552)
+export const fetchAppleTV = async (page = 1) => {
+  try {
+    const response = await fetch(
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=2552&page=${page}&sort_by=popularity.desc`
+    );
+    const data = await response.json();
+    return {
+      results: data.results.map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      })),
+      totalPages: Math.min(data.total_pages, 12), // Cap at 12 pages (~233 items)
+      totalResults: data.total_results,
+    };
+  } catch (error) {
+    console.error("Error fetching Apple TV+ content:", error);
+    return { results: [], totalPages: 0, totalResults: 0 };
+  }
+};
+
+// Fetch USA Network content (network ID: 30)
+export const fetchUSANetwork = async (page = 1) => {
+  try {
+    const response = await fetch(
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=30&page=${page}&sort_by=popularity.desc`
+    );
+    const data = await response.json();
+    return {
+      results: data.results.map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      })),
+      totalPages: Math.min(data.total_pages, 9), // Cap at 9 pages (~166 items)
+      totalResults: data.total_results,
+    };
+  } catch (error) {
+    console.error("Error fetching USA Network content:", error);
+    return { results: [], totalPages: 0, totalResults: 0 };
+  }
+};
+
+// Fetch The CW content (network ID: 71)
+export const fetchTheCW = async (page = 1) => {
+  try {
+    const response = await fetch(
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=71&page=${page}&sort_by=popularity.desc`
+    );
+    const data = await response.json();
+    return {
+      results: data.results.map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      })),
+      totalPages: Math.min(data.total_pages, 10), // Cap at 10 pages (~182 items)
+      totalResults: data.total_results,
+    };
+  } catch (error) {
+    console.error("Error fetching The CW content:", error);
+    return { results: [], totalPages: 0, totalResults: 0 };
+  }
+};
+
+// Fetch ESPN content (network ID: 29)
+export const fetchESPN = async (page = 1) => {
+  try {
+    const response = await fetch(
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=29&page=${page}&sort_by=popularity.desc`
+    );
+    const data = await response.json();
+    return {
+      results: data.results.map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      })),
+      totalPages: Math.min(data.total_pages, 6), // Cap at 6 pages (~102 items)
+      totalResults: data.total_results,
+    };
+  } catch (error) {
+    console.error("Error fetching ESPN content:", error);
+    return { results: [], totalPages: 0, totalResults: 0 };
   }
 };
 
@@ -688,6 +1205,26 @@ export const fetchFranchiseContent = async (franchise) => {
       "Amazon Prime": {
         movies: { with_companies: 1024 }, // Amazon Studios
         tv: { with_networks: 1024 },
+      },
+      Netflix: {
+        movies: { with_companies: 213 }, // Netflix
+        tv: { with_networks: 213 }, // Netflix network
+      },
+      "Netflix Originals": {
+        movies: { with_companies: 213 },
+        tv: { with_networks: 213 },
+      },
+      "Apple TV+": {
+        movies: { with_companies: 158414 }, // Apple Studios
+        tv: { with_networks: 2552 }, // Apple TV+ network
+      },
+      Peacock: {
+        movies: { with_companies: 3353 },
+        tv: { with_networks: 3353 }, // Peacock network
+      },
+      "Paramount+": {
+        movies: { with_companies: 4 }, // Paramount Pictures
+        tv: { with_networks: 4330 }, // Paramount+ network
       },
     };
 
@@ -2296,5 +2833,233 @@ export const fetchFranchiseContent = async (franchise) => {
       error
     );
     return { movies: [], tvShows: [] };
+  }
+};
+
+
+// ===== NEW HOME PAGE FEATURES =====
+
+// Fetch Top 10 trending this week (for numbered Top 10 section)
+export const fetchTop10ThisWeek = async () => {
+  try {
+    const response = await fetch(
+      `${BASE_URL}/trending/all/week?api_key=${API_KEY}`
+    );
+    const data = await response.json();
+    return data.results.slice(0, 10).map((item, index) => ({
+      id: item.id,
+      title: item.title || item.name,
+      image: getImageUrl(item.poster_path, "w342"),
+      backdrop: getBackdropUrl(item.backdrop_path, "w780"),
+      rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
+      year: item.release_date
+        ? new Date(item.release_date).getFullYear()
+        : item.first_air_date
+          ? new Date(item.first_air_date).getFullYear()
+          : "N/A",
+      type: item.media_type,
+      overview: item.overview,
+      rank: index + 1,
+    }));
+  } catch (error) {
+    console.error("Error fetching top 10:", error);
+    return [];
+  }
+};
+
+// Fetch content with trailers for Stories section
+export const fetchNewWithTrailers = async () => {
+  try {
+    // Get recently released movies and TV shows
+    const today = new Date();
+    const twoWeeksAgo = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const dateFrom = twoWeeksAgo.toISOString().split('T')[0];
+    const dateTo = today.toISOString().split('T')[0];
+
+    const [moviesResponse, tvResponse] = await Promise.all([
+      fetch(
+        `${BASE_URL}/discover/movie?api_key=${API_KEY}&primary_release_date.gte=${dateFrom}&primary_release_date.lte=${dateTo}&sort_by=popularity.desc`
+      ),
+      fetch(
+        `${BASE_URL}/tv/on_the_air?api_key=${API_KEY}&page=1`
+      ),
+    ]);
+
+    const [moviesData, tvData] = await Promise.all([
+      moviesResponse.json(),
+      tvResponse.json(),
+    ]);
+
+    // Combine and get top items
+    const combined = [
+      ...moviesData.results.slice(0, 8).map(m => ({ ...m, media_type: 'movie' })),
+      ...tvData.results.slice(0, 8).map(t => ({ ...t, media_type: 'tv' })),
+    ];
+
+    // Fetch trailers for each item
+    const itemsWithTrailers = await Promise.all(
+      combined.slice(0, 12).map(async (item) => {
+        try {
+          const videoResponse = await fetch(
+            `${BASE_URL}/${item.media_type}/${item.id}/videos?api_key=${API_KEY}`
+          );
+          const videoData = await videoResponse.json();
+          const trailer = videoData.results?.find(
+            (v) => v.type === "Trailer" && v.site === "YouTube"
+          ) || videoData.results?.find(
+            (v) => v.type === "Teaser" && v.site === "YouTube"
+          ) || videoData.results?.[0];
+
+          return {
+            id: item.id,
+            title: item.title || item.name,
+            image: getImageUrl(item.poster_path, "w342"),
+            backdrop: getBackdropUrl(item.backdrop_path, "w780"),
+            rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
+            year: item.release_date
+              ? new Date(item.release_date).getFullYear()
+              : item.first_air_date
+                ? new Date(item.first_air_date).getFullYear()
+                : "N/A",
+            type: item.media_type,
+            overview: item.overview,
+            trailerKey: trailer?.key || null,
+          };
+        } catch (e) {
+          return {
+            id: item.id,
+            title: item.title || item.name,
+            image: getImageUrl(item.poster_path, "w342"),
+            backdrop: getBackdropUrl(item.backdrop_path, "w780"),
+            rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
+            year: item.release_date
+              ? new Date(item.release_date).getFullYear()
+              : item.first_air_date
+                ? new Date(item.first_air_date).getFullYear()
+                : "N/A",
+            type: item.media_type,
+            overview: item.overview,
+            trailerKey: null,
+          };
+        }
+      })
+    );
+
+    // Filter to only items with trailers
+    return itemsWithTrailers.filter(item => item.trailerKey);
+  } catch (error) {
+    console.error("Error fetching new with trailers:", error);
+    return [];
+  }
+};
+
+// Fetch two featured titles for split hero (changes weekly based on date)
+export const fetchSplitHeroTitles = async () => {
+  try {
+    const response = await fetch(
+      `${BASE_URL}/trending/all/week?api_key=${API_KEY}`
+    );
+    const data = await response.json();
+
+    // Use week number to determine which items to show (rotates weekly)
+    const weekNumber = Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000));
+    const startIndex = (weekNumber % 5) * 2; // Rotates through top 10 items
+
+    const items = data.results.slice(startIndex, startIndex + 2);
+
+    return items.map((item) => ({
+      id: item.id,
+      title: item.title || item.name,
+      image: getImageUrl(item.poster_path, "w342"),
+      backdrop: getBackdropUrl(item.backdrop_path, "w780"),
+      rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
+      year: item.release_date
+        ? new Date(item.release_date).getFullYear()
+        : item.first_air_date
+          ? new Date(item.first_air_date).getFullYear()
+          : "N/A",
+      type: item.media_type,
+      overview: item.overview,
+    }));
+  } catch (error) {
+    console.error("Error fetching split hero titles:", error);
+    return [];
+  }
+};
+
+
+// Fetch TV shows with upcoming episode information for Stories section
+export const fetchUpcomingEpisodes = async () => {
+  try {
+    // Get popular TV shows that are currently airing
+    const response = await fetch(
+      `${BASE_URL}/tv/on_the_air?api_key=${API_KEY}&page=1`
+    );
+    const data = await response.json();
+
+    // Get detailed info for each show including next episode
+    const showsWithEpisodes = await Promise.all(
+      data.results.slice(0, 15).map(async (show) => {
+        try {
+          const detailResponse = await fetch(
+            `${BASE_URL}/tv/${show.id}?api_key=${API_KEY}`
+          );
+          const detail = await detailResponse.json();
+
+          const nextEpisode = detail.next_episode_to_air;
+          const lastEpisode = detail.last_episode_to_air;
+
+          // Format the air date nicely
+          let airDateText = '';
+          let episodeInfo = '';
+
+          if (nextEpisode) {
+            const airDate = new Date(nextEpisode.air_date);
+            const today = new Date();
+            const diffDays = Math.ceil((airDate - today) / (1000 * 60 * 60 * 24));
+
+            if (diffDays === 0) {
+              airDateText = 'Today';
+            } else if (diffDays === 1) {
+              airDateText = 'Tomorrow';
+            } else if (diffDays > 0 && diffDays <= 7) {
+              airDateText = airDate.toLocaleDateString('en-US', { weekday: 'long' });
+            } else if (diffDays > 0) {
+              airDateText = airDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
+
+            episodeInfo = `S${String(nextEpisode.season_number).padStart(2, '0')}E${String(nextEpisode.episode_number).padStart(2, '0')}`;
+          } else if (lastEpisode) {
+            airDateText = 'New Episode Out';
+            episodeInfo = `S${String(lastEpisode.season_number).padStart(2, '0')}E${String(lastEpisode.episode_number).padStart(2, '0')}`;
+          }
+
+          if (!airDateText) return null;
+
+          return {
+            id: show.id,
+            title: show.name,
+            image: getImageUrl(show.poster_path, "w342"),
+            backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+            rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+            year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
+            type: "tv",
+            overview: nextEpisode?.overview || lastEpisode?.overview || show.overview,
+            airDateText,
+            episodeInfo,
+            episodeName: nextEpisode?.name || lastEpisode?.name || '',
+            status: detail.status,
+          };
+        } catch (e) {
+          return null;
+        }
+      })
+    );
+
+    // Filter out nulls and return valid shows
+    return showsWithEpisodes.filter(show => show !== null);
+  } catch (error) {
+    console.error("Error fetching upcoming episodes:", error);
+    return [];
   }
 };

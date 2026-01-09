@@ -1,12 +1,12 @@
 export default {
-  // Netflix brand colors
-  netflixRed: "#E50914",
-  primary: "#E50914",
+  // Brand colors
+  netflixRed: "#37d1e4",
+  primary: "#37d1e4",
 
   // Backgrounds
-  background: "#000000",
-  darkGray: "#141414",
-  cardBackground: "#1a1a1a",
+  background: "#010e1f",
+  darkGray: "#010e1f",
+  cardBackground: "#0a1929",
 
   // Text colors
   white: "#FFFFFF",
