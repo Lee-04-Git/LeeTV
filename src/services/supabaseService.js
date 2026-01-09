@@ -263,11 +263,7 @@ export const getContinueWatching = async (mediaType = null) => {
     const userId = getUserId();
     if (!userId) throw new Error("User not authenticated");
 
-<<<<<<< HEAD
-    // Get all watch history for the user (now unique per media_id already)
-=======
     // Get all watch history for the user, ordered by most recent
->>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
     let query = supabase
       .from("watch_history")
       .select("*")
@@ -283,10 +279,6 @@ export const getContinueWatching = async (mediaType = null) => {
 
     if (error) throw error;
 
-<<<<<<< HEAD
-    console.log(`Returning ${data?.length || 0} continue watching items`);
-    return (data || []).slice(0, 10); // Limit to 10 items
-=======
     // Remove duplicates: Keep only the MOST RECENT entry per unique content
     // For TV shows: group by media_id to show most recent episode watched
     // For movies: group by media_id
@@ -305,7 +297,6 @@ export const getContinueWatching = async (mediaType = null) => {
       `Returning ${uniqueContent.length} unique continue watching items (most recent first)`
     );
     return uniqueContent.slice(0, 15); // Limit to 15 items
->>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
   } catch (error) {
     console.error("Error getting continue watching:", error);
     return [];
@@ -392,5 +383,104 @@ export const clearUserList = async () => {
   } catch (error) {
     console.error("Error clearing user list:", error);
     throw error;
+  }
+};
+
+// ===== WATCH PROGRESS OPERATIONS =====
+
+export const saveWatchProgress = async (progressData) => {
+  try {
+    const userId = getUserId();
+    if (!userId) throw new Error("User not authenticated");
+
+    const {
+      media_id,
+      media_type,
+      title,
+      poster_path,
+      backdrop_path,
+      season_number,
+      episode_number,
+      episode_title,
+      progress_seconds,
+      duration_seconds,
+    } = progressData;
+
+    // Calculate progress percentage
+    const progress_percentage = duration_seconds > 0
+      ? Math.round((progress_seconds / duration_seconds) * 100)
+      : 0;
+
+    // First, delete any existing entries for this specific content
+    const deleteQuery = supabase
+      .from("watch_history")
+      .delete()
+      .eq("user_id", userId)
+      .eq("media_id", media_id)
+      .eq("media_type", media_type);
+
+    // For TV shows, also match season and episode
+    if (media_type === "tv" && season_number && episode_number) {
+      deleteQuery.eq("season_number", season_number).eq("episode_number", episode_number);
+    }
+
+    await deleteQuery;
+
+    // Then insert the new entry with progress
+    const { data, error } = await supabase
+      .from("watch_history")
+      .insert({
+        user_id: userId,
+        media_id,
+        media_type,
+        title,
+        poster_path,
+        backdrop_path,
+        season_number: season_number || null,
+        episode_number: episode_number || null,
+        episode_title: episode_title || null,
+        progress_seconds: progress_seconds || 0,
+        duration_seconds: duration_seconds || 0,
+        progress_percentage: progress_percentage || 0,
+        last_watched_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error("Error saving watch progress:", error);
+    throw error;
+  }
+};
+
+export const getWatchProgress = async (mediaId, mediaType, season = null, episode = null) => {
+  try {
+    const userId = getUserId();
+    if (!userId) return null;
+
+    let query = supabase
+      .from("watch_history")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("media_id", mediaId)
+      .eq("media_type", mediaType);
+
+    // For TV shows, match specific episode
+    if (mediaType === "tv" && season && episode) {
+      query = query.eq("season_number", season).eq("episode_number", episode);
+    }
+
+    const { data, error } = await query.single();
+
+    if (error && error.code !== "PGRST116") {
+      throw error;
+    }
+
+    return data;
+  } catch (error) {
+    console.error("Error getting watch progress:", error);
+    return null;
   }
 };

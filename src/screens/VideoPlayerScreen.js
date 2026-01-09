@@ -12,11 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ScreenOrientation from "expo-screen-orientation";
 import * as NavigationBar from "expo-navigation-bar";
 import { FullscreenIcon } from "../components/Icons";
-<<<<<<< HEAD
-import { saveLastWatched } from "../services/supabaseService";
-=======
-import { saveWatchProgress, getWatchProgress } from "../services/supabaseService";
->>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
+import { saveLastWatched, saveWatchProgress, getWatchProgress } from "../services/supabaseService";
 
 let WebView = null;
 if (Platform.OS !== "web") {
@@ -94,24 +90,35 @@ const VideoPlayerScreen = ({ navigation, route }) => {
         progress_seconds: Math.floor(seconds),
         duration_seconds: Math.floor(duration) || (mediaType === "tv" ? 2400 : 7200),
       });
-    } catch (e) {}
+    } catch (e) { }
+  };
+
+  const saveToWatchHistory = async () => {
+    try {
+      await saveLastWatched({
+        media_id: mediaId,
+        media_type: mediaType,
+        title: title,
+        poster_path: posterPath,
+        backdrop_path: backdropPath,
+        season_number: mediaType === "tv" ? season : null,
+        episode_number: mediaType === "tv" ? episode : null,
+        episode_title: mediaType === "tv" ? episodeTitle : null,
+      });
+      console.log("Saved to watch history:", title);
+    } catch (error) {
+      console.error("Error saving to watch history:", error);
+    }
   };
 
   useEffect(() => {
-<<<<<<< HEAD
-    // Save to watch history when video loads or episode changes
-    saveToWatchHistory();
-
-    // Allow auto-rotation on mobile
-    if (Platform.OS !== "web") {
-      ScreenOrientation.unlockAsync();
-    }
-=======
     const init = async () => {
+      // Save to watch history
+      saveToWatchHistory();
+
       const savedTime = await loadProgress();
       setInitialTime(savedTime);
       currentTimeRef.current = savedTime;
->>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
 
       let url = mediaType === "tv"
         ? `https://vidrock.net/tv/${mediaId}/${season}/${episode}`
@@ -158,24 +165,6 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     };
   }, [mediaId, season, episode]);
 
-  const saveToWatchHistory = async () => {
-    try {
-      await saveLastWatched({
-        media_id: mediaId,
-        media_type: mediaType,
-        title: title,
-        poster_path: posterPath,
-        backdrop_path: backdropPath,
-        season_number: mediaType === "tv" ? season : null,
-        episode_number: mediaType === "tv" ? episode : null,
-        episode_title: mediaType === "tv" ? episodeTitle : null,
-      });
-      console.log("Saved to watch history:", title);
-    } catch (error) {
-      console.error("Error saving to watch history:", error);
-    }
-  };
-
   const toggleOrientation = async () => {
     if (Platform.OS === "web") return;
     const o = await ScreenOrientation.getOrientationAsync();
@@ -193,7 +182,7 @@ const VideoPlayerScreen = ({ navigation, route }) => {
         if (data.currentTime > 0) currentTimeRef.current = data.currentTime;
         if (data.duration > 0) durationRef.current = data.duration;
       }
-    } catch (err) {}
+    } catch (err) { }
   };
 
   const htmlContent = `
@@ -214,45 +203,6 @@ const VideoPlayerScreen = ({ navigation, route }) => {
     let resumed = false;
     let video = null;
 
-<<<<<<< HEAD
-  const handleRetry = () => {
-    setError(null);
-    if (webViewRef.current) {
-      webViewRef.current.reload();
-    }
-  };
-
-  if (!mediaId) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>
-            Unable to load video. Missing media ID.
-          </Text>
-          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-            <Text style={styles.backButtonText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  // Construct the video URL - VidRock handles ALL progress via its own localStorage
-  const videoUrl = React.useMemo(() => {
-    let url =
-      mediaType === "tv"
-        ? `https://vidrock.net/tv/${mediaId}/${season}/${episode}`
-        : `https://vidrock.net/movie/${mediaId}`;
-
-    // VidRock params - autoplay and no download button
-    const params = ["autoplay=true", "download=false"];
-    if (mediaType === "tv") {
-      params.push("autonext=true");
-    }
-
-    return url + "?" + params.join("&");
-  }, [mediaId, mediaType, season, episode]);
-=======
     function findVideo(doc) {
       if (!doc) return null;
       try {
@@ -298,114 +248,22 @@ const VideoPlayerScreen = ({ navigation, route }) => {
   </script>
 </body>
 </html>`;
->>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
 
   if (!isReady || !videoUrl) {
     return (
       <View style={styles.container}>
         <StatusBar hidden />
-<<<<<<< HEAD
-        <View style={styles.videoWrapper}>
-          <iframe
-            key={videoUrl}
-            src={videoUrl}
-            style={{
-              width: "100%",
-              height: "100%",
-              border: "none",
-              position: "absolute",
-              top: 0,
-              left: 0,
-            }}
-            allowFullScreen
-            allow="autoplay; fullscreen; encrypted-media"
-          />
-          <TouchableOpacity
-            onPress={handleBack}
-            style={[
-              styles.backBtn,
-              { position: "absolute", top: 20, left: 20, zIndex: 100 },
-            ]}
-          >
-            <Text style={styles.backIcon}>←</Text>
-          </TouchableOpacity>
-=======
         <View style={styles.loading}>
           <Text style={styles.loadingText}>Loading...</Text>
->>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
         </View>
       </View>
     );
   }
 
-<<<<<<< HEAD
-  // HTML for WebView - VidRock player with localStorage support
-  // Create unique storage key per episode to prevent cross-episode progress sharing
-  const storageKey =
-    mediaType === "tv" ? `${mediaId}_s${season}_e${episode}` : `${mediaId}`;
-
-  const htmlContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        html, body { width: 100%; height: 100%; background-color: #000; overflow: hidden; }
-        iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
-        [id*="ad"], [class*="ad"], [id*="banner"], [class*="banner"], [id*="popup"], [class*="popup"] {
-          display: none !important;
-        }
-      </style>
-    </head>
-    <body>
-      <iframe 
-        src="${videoUrl}"
-        id="videoFrame"
-        allowfullscreen
-        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-        referrerpolicy="origin"
-      ></iframe>
-      
-      <script>
-        // Block ads and popups
-        window.open = function() { return null; };
-        window.alert = function() {};
-        
-        // Clear VidRock's localStorage for this specific episode on load to prevent cross-episode contamination
-        // This ensures each episode starts fresh and VidRock tracks progress correctly per episode
-        try {
-          const storageKey = '${storageKey}';
-          const allKeys = Object.keys(localStorage);
-          
-          // Clear all VidRock progress keys EXCEPT the current episode
-          allKeys.forEach(key => {
-            if (key.includes('${mediaId}') && !key.includes(storageKey)) {
-              // Remove progress data from other episodes/seasons of the same show
-              localStorage.removeItem(key);
-            }
-          });
-          
-          console.log('LocalStorage cleared for other episodes, preserving:', storageKey);
-        } catch(e) {
-          console.log('localStorage access failed:', e);
-        }
-        
-        setInterval(() => {
-          document.querySelectorAll('[id*="ad"], [class*="ad"]').forEach(el => el.remove());
-        }, 1000);
-      </script>
-    </body>
-    </html>
-  `;
-
-=======
->>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
   return (
     <View style={styles.container}>
       <StatusBar hidden />
-      
-      {/* WebView takes full screen - no touch interceptors */}
+
       <WebView
         ref={webViewRef}
         source={{ html: htmlContent, baseUrl: "https://vidrock.net" }}
@@ -424,109 +282,6 @@ const VideoPlayerScreen = ({ navigation, route }) => {
         onMessage={handleMessage}
       />
 
-<<<<<<< HEAD
-      <TouchableWithoutFeedback onPress={toggleControls}>
-        <View style={styles.videoWrapper}>
-          <WebView
-            key={videoUrl}
-            ref={webViewRef}
-            source={{ html: htmlContent, baseUrl: "https://vidrock.net" }}
-            style={styles.video}
-            allowsFullscreenVideo={true}
-            allowsInlineMediaPlayback={true}
-            mediaPlaybackRequiresUserAction={false}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            cacheEnabled={true}
-            cacheMode="LOAD_DEFAULT"
-            androidLayerType="hardware"
-            onError={(e) => setError(e.nativeEvent.description)}
-            mixedContentMode="always"
-            originWhitelist={["*"]}
-            setSupportMultipleWindows={false}
-            javaScriptCanOpenWindowsAutomatically={false}
-            nestedScrollEnabled={true}
-            allowsProtectedMedia={true}
-            sharedCookiesEnabled={true}
-            thirdPartyCookiesEnabled={true}
-            incognito={false}
-            onShouldStartLoadWithRequest={(request) => {
-              const url = request.url.toLowerCase();
-              const adPatterns = [
-                "doubleclick",
-                "googlesyndication",
-                "ads.",
-                "/ads/",
-                "popads",
-                "adnxs",
-                "advertising",
-                "taboola",
-                "outbrain",
-              ];
-
-              const allowedDomains = [
-                "vidrock.net",
-                "vidsrc.net",
-                "vidrock",
-                "image.tmdb.org",
-                "about:blank",
-              ];
-              const isAllowed = allowedDomains.some((domain) =>
-                url.includes(domain)
-              );
-
-              if (isAllowed) return true;
-              if (url === videoUrl.toLowerCase() || url === "about:blank")
-                return true;
-
-              for (const pattern of adPatterns) {
-                if (url.includes(pattern)) {
-                  return false;
-                }
-              }
-
-              return true;
-            }}
-          />
-
-          {showControls && (
-            <View style={styles.controlsOverlay}>
-              <View style={styles.topBar}>
-                <TouchableOpacity onPress={handleBack} style={styles.backBtn}>
-                  <Text style={styles.backIcon}>←</Text>
-                </TouchableOpacity>
-                <View style={styles.titleContainer}>
-                  <Text style={styles.videoTitle} numberOfLines={1}>
-                    {title}
-                  </Text>
-                  {mediaType === "tv" && (
-                    <Text style={styles.episodeInfo}>
-                      Season {season} • Episode {episode}
-                    </Text>
-                  )}
-                </View>
-                <TouchableOpacity
-                  onPress={handleOrientationToggle}
-                  style={[styles.backBtn, { marginLeft: 15 }]}
-                >
-                  <FullscreenIcon size={24} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {error && (
-            <View style={styles.errorOverlay}>
-              <Text style={styles.errorText}>Failed to load video</Text>
-              <TouchableOpacity
-                style={styles.retryButton}
-                onPress={handleRetry}
-              >
-                <Text style={styles.retryText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-=======
-      {/* Floating controls - only at top, doesn't block video */}
       <View style={styles.topControls} pointerEvents="box-none">
         <TouchableOpacity
           onPress={() => {
@@ -537,15 +292,14 @@ const VideoPlayerScreen = ({ navigation, route }) => {
         >
           <Text style={styles.btnText}>←</Text>
         </TouchableOpacity>
-        
+
         <View style={styles.titleBox}>
           <Text style={styles.title} numberOfLines={1}>{title}</Text>
           {mediaType === "tv" && (
             <Text style={styles.episode}>S{season} E{episode}</Text>
->>>>>>> b0830ca5737073efb31f7bb6b462de4bfa6e452d
           )}
         </View>
-        
+
         <TouchableOpacity onPress={toggleOrientation} style={styles.btn}>
           <FullscreenIcon size={20} color="#fff" />
         </TouchableOpacity>
