@@ -9,6 +9,10 @@ import {
   Image,
   Dimensions,
   ActivityIndicator,
+  Pressable,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -34,7 +38,132 @@ import {
   isInList as checkIsInList,
 } from "../services/supabaseService";
 
+// Enable LayoutAnimation on Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 const { width } = Dimensions.get("window");
+
+// Episode Card Component with expandable description
+const EpisodeCard = ({ episode, seasonNumber, showTitle, showId, posterPath, backdropPath, navigation, formatEpisodeCode }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [showSeeMore, setShowSeeMore] = useState(false);
+  
+  const description = episode.overview || "No description available.";
+  
+  // Check if episode has aired yet
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const airDate = episode.airDate ? new Date(episode.airDate) : null;
+  const hasAired = airDate ? airDate <= today : true; // Assume aired if no date
+  
+  // Format release date if not aired
+  const releaseText = airDate && !hasAired 
+    ? airDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null;
+
+  const handleLongPress = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setIsExpanded(!isExpanded);
+  };
+
+  const handleSeeMore = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setIsExpanded(true);
+  };
+
+  const handlePress = () => {
+    if (!hasAired) return; // Don't navigate if episode hasn't aired
+    navigation.navigate("VideoPlayer", {
+      title: showTitle,
+      mediaId: showId,
+      mediaType: "tv",
+      season: seasonNumber,
+      episode: episode.episodeNumber,
+      episodeTitle: episode.name,
+      poster_path: posterPath,
+      backdrop_path: backdropPath,
+    });
+  };
+
+  const onTextLayout = (e) => {
+    // Check if text was truncated (more than 2 lines worth)
+    if (e.nativeEvent.lines && e.nativeEvent.lines.length >= 2) {
+      setShowSeeMore(true);
+    }
+  };
+
+  return (
+    <Pressable
+      style={styles.episodeCard}
+      onPress={handlePress}
+      onLongPress={handleLongPress}
+      delayLongPress={300}
+      android_ripple={{ color: 'rgba(255,255,255,0.1)' }}
+    >
+      {/* Thumbnail with Play Icon or Coming Soon Badge */}
+      <View style={styles.episodeThumbnailWrapper}>
+        <Image
+          source={{ uri: episode.stillPath }}
+          style={[styles.episodeThumbnail, !hasAired && styles.episodeThumbnailDimmed]}
+          resizeMode="cover"
+        />
+        {hasAired ? (
+          <View style={styles.episodePlayIcon}>
+            <Ionicons name="play" size={16} color={colors.white} />
+          </View>
+        ) : (
+          <View style={styles.episodeComingSoonBadge}>
+            <Ionicons name="time-outline" size={12} color="#fff" />
+            <Text style={styles.episodeComingSoonText}>Coming</Text>
+          </View>
+        )}
+        {episode.runtime && episode.runtime !== "N/A" && hasAired && (
+          <Text style={styles.episodeDuration}>{episode.runtime}</Text>
+        )}
+      </View>
+
+      {/* Episode Details */}
+      <View style={styles.episodeDetails}>
+        <View style={styles.episodeTitleRow}>
+          <Text style={styles.episodeTitle} numberOfLines={1}>
+            {formatEpisodeCode(seasonNumber, episode.episodeNumber)} · {episode.name}
+          </Text>
+        </View>
+        
+        {/* Not out yet indicator with release date */}
+        {!hasAired && releaseText && (
+          <View style={styles.episodeReleaseBadge}>
+            <Ionicons name="calendar-outline" size={12} color="#37d1e4" />
+            <Text style={styles.episodeReleaseText}>Available {releaseText}</Text>
+          </View>
+        )}
+        
+        {/* Description with See More */}
+        <View style={styles.episodeDescriptionContainer}>
+          <Text 
+            style={styles.episodeDescription} 
+            numberOfLines={isExpanded ? undefined : 2}
+            onTextLayout={!isExpanded ? onTextLayout : undefined}
+          >
+            {description}
+          </Text>
+          {!isExpanded && showSeeMore && description.length > 80 && (
+            <TouchableOpacity onPress={handleSeeMore} style={styles.seeMoreButton}>
+              <Text style={styles.seeMoreText}>...See More</Text>
+            </TouchableOpacity>
+          )}
+          {isExpanded && (
+            <TouchableOpacity onPress={handleLongPress} style={styles.seeLessButton}>
+              <Text style={styles.seeLessText}>See Less</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+    </Pressable>
+  );
+};
 
 const ShowDetailsScreen = ({ navigation, route }) => {
   const { show: initialShow } = route.params || {};
@@ -431,48 +560,17 @@ const ShowDetailsScreen = ({ navigation, route }) => {
                     ) : (
                       <View style={styles.episodesList}>
                         {seasonDetails?.episodes?.map((episode) => (
-                          <TouchableOpacity
+                          <EpisodeCard
                             key={episode.id}
-                            style={styles.episodeCard}
-                            onPress={() => {
-                              navigation.navigate("VideoPlayer", {
-                                title: show?.title,
-                                mediaId: show?.id,
-                                mediaType: "tv",
-                                season: selectedSeason,
-                                episode: episode.episodeNumber,
-                                episodeTitle: episode.name,
-                                poster_path: show?.poster_path,
-                                backdrop_path: show?.backdrop_path,
-                              });
-                            }}
-                            activeOpacity={0.7}
-                          >
-                            {/* Thumbnail with Play Icon */}
-                            <View style={styles.episodeThumbnailWrapper}>
-                              <Image
-                                source={{ uri: episode.stillPath }}
-                                style={styles.episodeThumbnail}
-                                resizeMode="cover"
-                              />
-                              <View style={styles.episodePlayIcon}>
-                                <Ionicons name="play" size={16} color={colors.white} />
-                              </View>
-                              {episode.runtime && episode.runtime !== "N/A" && (
-                                <Text style={styles.episodeDuration}>{episode.runtime}</Text>
-                              )}
-                            </View>
-
-                            {/* Episode Details */}
-                            <View style={styles.episodeDetails}>
-                              <Text style={styles.episodeTitle} numberOfLines={1}>
-                                {formatEpisodeCode(selectedSeason, episode.episodeNumber)} · {episode.name}
-                              </Text>
-                              <Text style={styles.episodeDescription} numberOfLines={2}>
-                                {episode.overview || "No description available."}
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
+                            episode={episode}
+                            seasonNumber={selectedSeason}
+                            showTitle={show?.title}
+                            showId={show?.id}
+                            posterPath={show?.poster_path}
+                            backdropPath={show?.backdrop_path}
+                            navigation={navigation}
+                            formatEpisodeCode={formatEpisodeCode}
+                          />
                         ))}
                       </View>
                     )}
@@ -806,7 +904,7 @@ const styles = StyleSheet.create({
   // Episode Card - Netflix Style (horizontal layout: thumbnail left, info right)
   episodeCard: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255, 255, 255, 0.1)",
@@ -854,16 +952,75 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: 12,
   },
+  episodeTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   episodeTitle: {
     color: colors.white,
     fontSize: 14,
     fontWeight: "600",
     marginBottom: 4,
+    flex: 1,
+  },
+  episodeDescriptionContainer: {
+    position: "relative",
   },
   episodeDescription: {
     color: colors.gray,
     fontSize: 12,
-    lineHeight: 16,
+    lineHeight: 18,
+  },
+  episodeThumbnailDimmed: {
+    opacity: 0.5,
+  },
+  episodeComingSoonBadge: {
+    position: "absolute",
+    top: "50%",
+    left: "50%",
+    marginTop: -12,
+    marginLeft: -28,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.85)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    gap: 4,
+  },
+  episodeComingSoonText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  episodeReleaseBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 4,
+    marginTop: 2,
+  },
+  episodeReleaseText: {
+    color: "#37d1e4",
+    fontSize: 11,
+    fontWeight: "500",
+  },
+  seeMoreButton: {
+    marginTop: 2,
+  },
+  seeMoreText: {
+    color: colors.lightGray,
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  seeLessButton: {
+    marginTop: 6,
+  },
+  seeLessText: {
+    color: colors.lightGray,
+    fontSize: 12,
+    fontWeight: "500",
   },
   moreLikeThisSection: {
     marginTop: 30,

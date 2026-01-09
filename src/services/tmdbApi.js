@@ -637,7 +637,7 @@ export const fetchAllTVShows = async (totalPages = 20) => {
 export const fetchAnime = async (page = 1) => {
   try {
     const response = await fetch(
-      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=16&with_origin_country=JP&page=${page}&sort_by=popularity.desc`
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=16&with_origin_country=JP&page=${page}&sort_by=popularity.desc&include_adult=false`
     );
     const data = await response.json();
     return {
@@ -677,7 +677,7 @@ export const fetchAllAnime = async (targetCount = 500) => {
       for (let page = startPage; page <= endPage; page++) {
         pagePromises.push(
           fetch(
-            `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=16&with_origin_country=JP&page=${page}&sort_by=popularity.desc`
+            `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=16&with_origin_country=JP&page=${page}&sort_by=popularity.desc&include_adult=false`
           ).then((res) => safeJsonParse(res))
         );
       }
@@ -718,7 +718,7 @@ export const fetchAllAnime = async (targetCount = 500) => {
 export const fetchNetflix = async (page = 1) => {
   try {
     const response = await fetch(
-      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=213&page=${page}&sort_by=popularity.desc`
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=213&page=${page}&sort_by=popularity.desc&include_adult=false`
     );
     const data = await response.json();
     return {
@@ -747,7 +747,7 @@ export const fetchNetflix = async (page = 1) => {
 export const fetchHulu = async (page = 1) => {
   try {
     const response = await fetch(
-      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=453&page=${page}&sort_by=popularity.desc`
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=453&page=${page}&sort_by=popularity.desc&include_adult=false`
     );
     const data = await response.json();
     return {
@@ -778,10 +778,10 @@ export const fetchDC = async (page = 1) => {
     // Fetch both movies and TV shows from DC
     const [moviesResponse, tvResponse] = await Promise.all([
       fetch(
-        `${BASE_URL}/discover/movie?api_key=${API_KEY}&with_companies=429&page=${page}&sort_by=popularity.desc`
+        `${BASE_URL}/discover/movie?api_key=${API_KEY}&with_companies=429&page=${page}&sort_by=popularity.desc&include_adult=false`
       ),
       fetch(
-        `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_companies=429&page=${page}&sort_by=popularity.desc`
+        `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_companies=429&page=${page}&sort_by=popularity.desc&include_adult=false`
       ),
     ]);
 
@@ -832,59 +832,310 @@ export const fetchDC = async (page = 1) => {
   }
 };
 
-// Fetch Marvel content (company IDs: 420 - Marvel Studios, 7505 - Marvel Entertainment)
+// Fetch Marvel content - MCU Phase 1-5 content ONLY
 export const fetchMarvel = async (page = 1) => {
   try {
-    // Fetch both movies and TV shows from Marvel
-    const [moviesResponse, tvResponse] = await Promise.all([
-      fetch(
-        `${BASE_URL}/discover/movie?api_key=${API_KEY}&with_companies=420|7505&page=${page}&sort_by=popularity.desc`
-      ),
-      fetch(
-        `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_companies=420|7505&page=${page}&sort_by=popularity.desc`
-      ),
+    // MCU Phase 1-5 Movie IDs (ONLY official MCU films)
+    const mcuMovieIds = [
+      // Phase 1
+      1726, 1724, 10138, 10195, 1771, 24428,
+      // Phase 2
+      68721, 76338, 100402, 118340, 99861, 102899,
+      // Phase 3
+      271110, 284052, 283995, 315635, 284053, 284054, 299536, 363088, 299537, 299534, 429617,
+      // Phase 4
+      497698, 566525, 524434, 634649, 453395, 616037, 505642, 640146, 447365, 609681,
+      // Phase 5
+      822119, 986056, 1003596,
+    ];
+
+    // MCU Phase 4-5 TV Show IDs (Disney+ series ONLY - no animation)
+    const mcuTVShowIds = [
+      85271, 88396, 84958, 88329, 92749, 92782, 92783, 114472, 114471,
+      114695, 202555, 138501, 194764, 136315, 227417,
+    ];
+
+    // Marvel Animation TV IDs - STRICTLY verified Marvel animated series only
+    // These are confirmed Marvel productions - no third-party content
+    const marvelAnimationTVIds = [
+      // Disney+ MCU Animated Series
+      91363,   // What If...? (2021) - Marvel Studios
+      198178,  // X-Men '97 (2024) - Marvel Animation
+      227985,  // Marvel Zombies (2025) - Marvel Studios
+      227973,  // Eyes of Wakanda (2025) - Marvel Studios
+      219109,  // Your Friendly Neighborhood Spider-Man (2025) - Marvel Animation
+      
+      // Classic Marvel Animated Series (verified Marvel productions)
+      4484,    // X-Men: The Animated Series (1992) - Marvel/Saban
+      2108,    // Spider-Man: The Animated Series (1994) - Marvel
+      2158,    // X-Men: Evolution (2000) - Marvel
+      15260,   // The Spectacular Spider-Man (2008) - Marvel/Sony
+      16366,   // Wolverine and the X-Men (2009) - Marvel
+      16169,   // The Avengers: Earth's Mightiest Heroes (2010) - Marvel
+      
+      // Modern Marvel Animated Series (verified Marvel productions)
+      41727,   // Ultimate Spider-Man (2012) - Marvel Animation
+      57243,   // Avengers Assemble (2013) - Marvel Animation
+      60735,   // Hulk and the Agents of S.M.A.S.H. (2013) - Marvel Animation
+      62127,   // Guardians of the Galaxy (2015) - Marvel Animation
+      67978,   // Spider-Man (2017) - Marvel Animation
+      87917,   // M.O.D.O.K. (2021) - Marvel Television
+      90446,   // Hit-Monkey (2021) - Marvel Television
+      136804,  // Moon Girl and Devil Dinosaur (2023) - Marvel Animation
+    ];
+
+    // Marvel Animated Movie IDs - STRICTLY verified Marvel animated films only
+    const marvelAnimatedMovieIds = [
+      // Spider-Verse Trilogy (Sony/Marvel)
+      324857,  // Spider-Man: Into the Spider-Verse (2018)
+      751391,  // Spider-Man: Across the Spider-Verse (2023)
+      569094,  // Spider-Man: Beyond the Spider-Verse (2026)
+      
+      // Marvel Direct-to-Video Animated Films
+      14609,   // Ultimate Avengers (2006)
+      14611,   // Ultimate Avengers 2 (2006)
+      14612,   // The Invincible Iron Man (2007)
+      14613,   // Doctor Strange: The Sorcerer Supreme (2007)
+      17814,   // Next Avengers: Heroes of Tomorrow (2008)
+      24238,   // Hulk Vs. (2009)
+      29805,   // Planet Hulk (2010)
+      44912,   // Thor: Tales of Asgard (2011)
+      76492,   // Iron Man & Hulk: Heroes United (2013)
+      177572,  // Iron Man & Captain America: Heroes United (2014)
+    ];
+
+    // Fox X-Men Movie IDs - ONLY live-action films (animated content blocked)
+    const foxXMenMovieIds = [
+      36657,   // X-Men (2000)
+      36658,   // X2: X-Men United (2003)
+      36668,   // X-Men: The Last Stand (2006)
+      2080,    // X-Men Origins: Wolverine (2009)
+      49538,   // X-Men: First Class (2011)
+      76170,   // The Wolverine (2013)
+      127585,  // X-Men: Days of Future Past (2014)
+      246655,  // X-Men: Apocalypse (2016)
+      263115,  // Logan (2017)
+      293660,  // Deadpool (2016)
+      383498,  // Deadpool 2 (2018)
+      340102,  // Dark Phoenix (2019)
+      269149,  // The New Mutants (2020)
+      533535,  // Deadpool & Wolverine (2024)
+    ];
+
+    // Fetch movies
+    const moviePromises = mcuMovieIds.map(async (movieId) => {
+      try {
+        const response = await fetch(`${BASE_URL}/movie/${movieId}?api_key=${API_KEY}`);
+        const data = await response.json();
+        return data.id ? data : null;
+      } catch (error) {
+        return null;
+      }
+    });
+
+    // Fetch TV shows - with validation to block non-MCU content
+    const tvPromises = mcuTVShowIds.map(async (showId) => {
+      try {
+        const response = await fetch(`${BASE_URL}/tv/${showId}?api_key=${API_KEY}`);
+        const data = await response.json();
+        if (!data.id) return null;
+        
+        const title = (data.name || '').toLowerCase();
+        const overview = (data.overview || '').toLowerCase();
+        const originCountry = data.origin_country || [];
+        
+        // Block cooking shows
+        const cookingKeywords = ['cooking', 'chef', 'kitchen', 'recipe', 'food', 'bake', 'baking', 'culinary', 'restaurant'];
+        const isCookingShow = cookingKeywords.some(keyword => 
+          title.includes(keyword) || overview.includes(keyword)
+        );
+        if (isCookingShow) return null;
+        
+        // Block DC shows
+        const dcKeywords = ['batman', 'superman', 'wonder woman', 'justice league', 'dc comics', 'gotham', 'harley quinn', 'joker', 'aquaman', 'flash'];
+        const isDCShow = dcKeywords.some(keyword => 
+          title.includes(keyword) || overview.includes(keyword)
+        );
+        if (isDCShow) return null;
+        
+        // Block Asian shows (Korean, Japanese, Chinese, etc.) - unless it's Marvel content
+        const asianCountries = ['KR', 'JP', 'CN', 'TW', 'TH', 'IN', 'PH'];
+        const isAsianShow = originCountry.some(country => asianCountries.includes(country));
+        const isMarvelContent = title.includes('marvel') || overview.includes('marvel') || 
+                                overview.includes('mcu') || overview.includes('avenger');
+        if (isAsianShow && !isMarvelContent) return null;
+        
+        return data;
+      } catch (error) {
+        return null;
+      }
+    });
+
+    // Fetch Animation TV - with STRICT Marvel validation using production companies
+    const animationPromises = marvelAnimationTVIds.map(async (showId) => {
+      try {
+        const response = await fetch(`${BASE_URL}/tv/${showId}?api_key=${API_KEY}`);
+        const data = await response.json();
+        if (!data.id) return null;
+        
+        const title = (data.name || '').toLowerCase();
+        const overview = (data.overview || '').toLowerCase();
+        
+        // Check production companies for Marvel (420 = Marvel Studios, 7505 = Marvel Entertainment, 13252 = Marvel Animation)
+        const productionCompanyIds = data.production_companies?.map(c => c.id) || [];
+        const isMarvelProduction = productionCompanyIds.some(id => [420, 7505, 13252, 38679, 2301].includes(id));
+        
+        // Strict keyword validation for Marvel content
+        const marvelKeywords = [
+          'marvel', 'spider-man', 'spider man', 'x-men', 'avenger', 'hulk', 
+          'iron man', 'wolverine', 'guardians of the galaxy', 'what if',
+          'moon girl', 'm.o.d.o.k', 'hit-monkey', 'captain america', 'thor',
+          'black panther', 'doctor strange', 'ant-man', 'wakanda'
+        ];
+        
+        const hasMarvelKeyword = marvelKeywords.some(keyword => 
+          title.includes(keyword) || overview.includes(keyword)
+        );
+        
+        // Must be either a Marvel production OR have Marvel keywords
+        if (!isMarvelProduction && !hasMarvelKeyword) return null;
+        
+        return data;
+      } catch (error) {
+        return null;
+      }
+    });
+
+    // Fetch Animated Movies - with STRICT Marvel validation
+    const animatedMoviePromises = marvelAnimatedMovieIds.map(async (movieId) => {
+      try {
+        const response = await fetch(`${BASE_URL}/movie/${movieId}?api_key=${API_KEY}`);
+        const data = await response.json();
+        if (!data.id) return null;
+        
+        const title = (data.title || '').toLowerCase();
+        const overview = (data.overview || '').toLowerCase();
+        
+        // Must be animated (genre 16)
+        const isAnimated = data.genres?.some(g => g.id === 16);
+        if (!isAnimated) return null;
+        
+        // Check production companies for Marvel/Sony Spider-Verse
+        const productionCompanyIds = data.production_companies?.map(c => c.id) || [];
+        const isMarvelProduction = productionCompanyIds.some(id => [420, 7505, 13252, 38679, 2301, 5, 34].includes(id));
+        
+        // Strict keyword validation for Marvel animated content
+        const marvelKeywords = [
+          'marvel', 'spider-man', 'spider man', 'spider-verse', 'avenger', 'hulk', 
+          'iron man', 'thor', 'captain america', 'doctor strange', 'planet hulk'
+        ];
+        
+        const hasMarvelKeyword = marvelKeywords.some(keyword => 
+          title.includes(keyword) || overview.includes(keyword)
+        );
+        
+        // Must be either a Marvel production OR have Marvel keywords
+        if (!isMarvelProduction && !hasMarvelKeyword) return null;
+        
+        return data;
+      } catch (error) {
+        return null;
+      }
+    });
+
+    // Fetch X-Men movies - STRICTLY block any animated content
+    const xmenPromises = foxXMenMovieIds.map(async (movieId) => {
+      try {
+        const response = await fetch(`${BASE_URL}/movie/${movieId}?api_key=${API_KEY}`);
+        const data = await response.json();
+        if (!data.id) return null;
+        
+        // Block animated movies (genre 16 = Animation)
+        const isAnimated = data.genres?.some(g => g.id === 16);
+        if (isAnimated) return null;
+        
+        return data;
+      } catch (error) {
+        return null;
+      }
+    });
+
+    const [moviesData, tvShowsData, animationData, animatedMoviesData, xmenData] = await Promise.all([
+      Promise.all(moviePromises),
+      Promise.all(tvPromises),
+      Promise.all(animationPromises),
+      Promise.all(animatedMoviePromises),
+      Promise.all(xmenPromises),
     ]);
 
-    const [moviesData, tvData] = await Promise.all([
-      moviesResponse.json(),
-      tvResponse.json(),
-    ]);
+    const validMovies = moviesData.filter(m => m !== null);
+    const validTVShows = tvShowsData.filter(s => s !== null);
+    const validAnimation = animationData.filter(a => a !== null);
+    const validAnimatedMovies = animatedMoviesData.filter(m => m !== null);
+    const validXMen = xmenData.filter(x => x !== null);
 
-    const movies = moviesData.results.map((movie) => ({
+    const movies = validMovies.map((movie) => ({
       id: movie.id,
       title: movie.title,
       image: getImageUrl(movie.poster_path, "w342"),
       backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
       rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
-      year: movie.release_date
-        ? new Date(movie.release_date).getFullYear()
-        : "N/A",
+      year: movie.release_date ? new Date(movie.release_date).getFullYear() : "N/A",
       type: "movie",
       overview: movie.overview,
     }));
 
-    const tvShows = tvData.results.map((show) => ({
+    const tvShows = validTVShows.map((show) => ({
       id: show.id,
       title: show.name,
       image: getImageUrl(show.poster_path, "w342"),
       backdrop: getBackdropUrl(show.backdrop_path, "w780"),
       rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
-      year: show.first_air_date
-        ? new Date(show.first_air_date).getFullYear()
-        : "N/A",
+      year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
       type: "tv",
       overview: show.overview,
     }));
 
-    // Combine and sort by popularity (rating as proxy)
-    const combined = [...movies, ...tvShows].sort(
-      (a, b) => parseFloat(b.rating) - parseFloat(a.rating)
-    );
+    const animation = validAnimation.map((show) => ({
+      id: show.id,
+      title: show.name,
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+      rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+      year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
+      type: "tv",
+      overview: show.overview,
+    }));
+
+    const animatedMovies = validAnimatedMovies.map((movie) => ({
+      id: movie.id,
+      title: movie.title,
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+      rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+      year: movie.release_date ? new Date(movie.release_date).getFullYear() : "N/A",
+      type: "movie",
+      overview: movie.overview,
+    }));
+
+    const xmenMovies = validXMen.map((movie) => ({
+      id: movie.id,
+      title: movie.title,
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+      rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+      year: movie.release_date ? new Date(movie.release_date).getFullYear() : "N/A",
+      type: "movie",
+      overview: movie.overview,
+    }));
+
+    // Combine all and sort by year
+    const combined = [...movies, ...tvShows, ...animation, ...animatedMovies, ...xmenMovies].sort((a, b) => (b.year || 0) - (a.year || 0));
 
     return {
       results: combined,
-      totalPages: Math.max(moviesData.total_pages, tvData.total_pages),
-      totalResults: moviesData.total_results + tvData.total_results,
+      totalPages: 1,
+      totalResults: combined.length,
     };
   } catch (error) {
     console.error("Error fetching Marvel content:", error);
@@ -898,10 +1149,10 @@ export const fetchStarWars = async (page = 1) => {
     // Fetch both movies and TV shows via search
     const [moviesResponse, tvResponse] = await Promise.all([
       fetch(
-        `${BASE_URL}/search/movie?api_key=${API_KEY}&query=Star%20Wars&page=${page}`
+        `${BASE_URL}/search/movie?api_key=${API_KEY}&query=Star%20Wars&page=${page}&include_adult=false`
       ),
       fetch(
-        `${BASE_URL}/search/tv?api_key=${API_KEY}&query=Star%20Wars&page=${page}`
+        `${BASE_URL}/search/tv?api_key=${API_KEY}&query=Star%20Wars&page=${page}&include_adult=false`
       ),
     ]);
 
@@ -958,10 +1209,10 @@ export const fetchHBOMax = async (page = 1) => {
     // Fetch from both HBO and HBO Max networks
     const [hboResponse, maxResponse] = await Promise.all([
       fetch(
-        `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=49&page=${page}&sort_by=popularity.desc`
+        `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=49&page=${page}&sort_by=popularity.desc&include_adult=false`
       ),
       fetch(
-        `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=3186&page=${page}&sort_by=popularity.desc`
+        `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=3186&page=${page}&sort_by=popularity.desc&include_adult=false`
       ),
     ]);
 
@@ -1017,7 +1268,7 @@ export const fetchHBOMax = async (page = 1) => {
 export const fetchParamountPlus = async (page = 1) => {
   try {
     const response = await fetch(
-      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=4330&page=${page}&sort_by=popularity.desc`
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=4330&page=${page}&sort_by=popularity.desc&include_adult=false`
     );
     const data = await response.json();
     return {
@@ -1046,7 +1297,7 @@ export const fetchParamountPlus = async (page = 1) => {
 export const fetchAppleTV = async (page = 1) => {
   try {
     const response = await fetch(
-      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=2552&page=${page}&sort_by=popularity.desc`
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=2552&page=${page}&sort_by=popularity.desc&include_adult=false`
     );
     const data = await response.json();
     return {
@@ -1075,7 +1326,7 @@ export const fetchAppleTV = async (page = 1) => {
 export const fetchUSANetwork = async (page = 1) => {
   try {
     const response = await fetch(
-      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=30&page=${page}&sort_by=popularity.desc`
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=30&page=${page}&sort_by=popularity.desc&include_adult=false`
     );
     const data = await response.json();
     return {
@@ -1104,7 +1355,7 @@ export const fetchUSANetwork = async (page = 1) => {
 export const fetchTheCW = async (page = 1) => {
   try {
     const response = await fetch(
-      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=71&page=${page}&sort_by=popularity.desc`
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=71&page=${page}&sort_by=popularity.desc&include_adult=false`
     );
     const data = await response.json();
     return {
@@ -1133,7 +1384,7 @@ export const fetchTheCW = async (page = 1) => {
 export const fetchESPN = async (page = 1) => {
   try {
     const response = await fetch(
-      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=29&page=${page}&sort_by=popularity.desc`
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=29&page=${page}&sort_by=popularity.desc&include_adult=false`
     );
     const data = await response.json();
     return {
@@ -1233,179 +1484,305 @@ export const fetchFranchiseContent = async (franchise) => {
       return { movies: [], tvShows: [] };
     }
 
-    // Special handling for Marvel - fetch collections
+    // Special handling for Marvel - MCU Phase 1-5 content ONLY
     if (franchise === "Marvel") {
-      // Search for all Marvel collections
-      const searchTerms = [
-        "Marvel",
-        "Avengers",
-        "Iron Man",
-        "Thor",
-        "Captain America",
-        "Spider-Man",
-        "X-Men",
-        "Wolverine",
-        "Deadpool",
-        "Guardians",
-        "Ant-Man",
-        "Doctor Strange",
-        "Black Panther",
-        "Venom",
-        "Fantastic Four",
-        "Blade",
-        "Ghost Rider",
-        "Punisher",
-        "Daredevil",
-        "Hulk",
-        "Eternals",
-        "Shang-Chi",
+      // MCU Phase 1-5 Movie IDs (ONLY official MCU films - nothing else allowed)
+      const mcuMovieIds = [
+        // Phase 1
+        1726,    // Iron Man (2008)
+        1724,    // The Incredible Hulk (2008)
+        10138,   // Iron Man 2 (2010)
+        10195,   // Thor (2011)
+        1771,    // Captain America: The First Avenger (2011)
+        24428,   // The Avengers (2012)
+        
+        // Phase 2
+        68721,   // Iron Man 3 (2013)
+        76338,   // Thor: The Dark World (2013)
+        100402,  // Captain America: The Winter Soldier (2014)
+        118340,  // Guardians of the Galaxy (2014)
+        99861,   // Avengers: Age of Ultron (2015)
+        102899,  // Ant-Man (2015)
+        
+        // Phase 3
+        271110,  // Captain America: Civil War (2016)
+        284052,  // Doctor Strange (2016)
+        283995,  // Guardians of the Galaxy Vol. 2 (2017)
+        315635,  // Spider-Man: Homecoming (2017)
+        284053,  // Thor: Ragnarok (2017)
+        284054,  // Black Panther (2018)
+        299536,  // Avengers: Infinity War (2018)
+        363088,  // Ant-Man and the Wasp (2018)
+        299537,  // Captain Marvel (2019)
+        299534,  // Avengers: Endgame (2019)
+        429617,  // Spider-Man: Far From Home (2019)
+        
+        // Phase 4
+        497698,  // Black Widow (2021)
+        566525,  // Shang-Chi and the Legend of the Ten Rings (2021)
+        524434,  // Eternals (2021)
+        634649,  // Spider-Man: No Way Home (2021)
+        453395,  // Doctor Strange in the Multiverse of Madness (2022)
+        616037,  // Thor: Love and Thunder (2022)
+        505642,  // Black Panther: Wakanda Forever (2022)
+        640146,  // Ant-Man and the Wasp: Quantumania (2023)
+        447365,  // Guardians of the Galaxy Vol. 3 (2023)
+        609681,  // The Marvels (2023)
+        
+        // Phase 5
+        822119,  // Captain America: Brave New World (2025)
+        986056,  // Thunderbolts* (2025)
+        1003596, // The Fantastic Four: First Steps (2025)
       ];
 
-      const collectionSearchPromises = searchTerms.map(async (term) => {
+      // MCU Phase 4-5 TV Show IDs (Disney+ series ONLY)
+      const mcuTVShowIds = [
+        // Phase 4
+        85271,   // WandaVision (2021)
+        88396,   // The Falcon and the Winter Soldier (2021)
+        84958,   // Loki (2021)
+        88329,   // Hawkeye (2021)
+        92749,   // Moon Knight (2022)
+        92782,   // Ms. Marvel (2022)
+        92783,   // She-Hulk: Attorney at Law (2022)
+        114472,  // The Guardians of the Galaxy Holiday Special (2022)
+        114471,  // Werewolf by Night (2022)
+        
+        // Phase 5
+        114695,  // Secret Invasion (2023)
+        202555,  // Loki Season 2 (2023)
+        138501,  // Echo (2024)
+        194764,  // Agatha All Along (2024)
+        136315,  // Daredevil: Born Again (2025)
+        227417,  // Ironheart (2025)
+      ];
+
+      // Marvel Animation IDs - Only verified Marvel animated TV series
+      const marvelAnimationTVIds = [
+        // Disney+ MCU Animated
+        91363,   // What If...? (2021)
+        198178,  // X-Men '97 (2024)
+        227985,  // Marvel Zombies (2025)
+        227973,  // Eyes of Wakanda (2025)
+        219109,  // Your Friendly Neighborhood Spider-Man (2025)
+        
+        // Classic Marvel Animated (verified Marvel productions)
+        4484,    // X-Men: The Animated Series (1992)
+        2108,    // Spider-Man: The Animated Series (1994)
+        2158,    // X-Men: Evolution (2000)
+        15260,   // The Spectacular Spider-Man (2008)
+        16366,   // Wolverine and the X-Men (2009)
+        16169,   // The Avengers: Earth's Mightiest Heroes (2010)
+        41727,   // Ultimate Spider-Man (2012)
+        57243,   // Avengers Assemble (2013)
+        60735,   // Hulk and the Agents of S.M.A.S.H. (2013)
+        62127,   // Guardians of the Galaxy (2015)
+        67978,   // Spider-Man (2017)
+        87917,   // M.O.D.O.K. (2021)
+        90446,   // Hit-Monkey (2021)
+        136804,  // Moon Girl and Devil Dinosaur (2023)
+      ];
+
+      // Marvel Animated Movies - Only verified Marvel animated films
+      const marvelAnimatedMovieIds = [
+        324857,  // Spider-Man: Into the Spider-Verse (2018)
+        751391,  // Spider-Man: Across the Spider-Verse (2023)
+        569094,  // Spider-Man: Beyond the Spider-Verse (2026)
+        14609,   // Ultimate Avengers (2006)
+        14611,   // Ultimate Avengers 2 (2006)
+        14612,   // The Invincible Iron Man (2007)
+        14613,   // Doctor Strange: The Sorcerer Supreme (2007)
+        17814,   // Next Avengers: Heroes of Tomorrow (2008)
+        24238,   // Hulk Vs. (2009)
+        29805,   // Planet Hulk (2010)
+        44912,   // Thor: Tales of Asgard (2011)
+        76492,   // Iron Man & Hulk: Heroes United (2013)
+        177572,  // Iron Man & Captain America: Heroes United (2014)
+      ];
+
+      // Fox X-Men Movie IDs - ONLY live-action films (no animated)
+      const foxXMenMovieIds = [
+        36657,   // X-Men (2000)
+        36658,   // X2: X-Men United (2003)
+        36668,   // X-Men: The Last Stand (2006)
+        2080,    // X-Men Origins: Wolverine (2009)
+        49538,   // X-Men: First Class (2011)
+        76170,   // The Wolverine (2013)
+        127585,  // X-Men: Days of Future Past (2014)
+        246655,  // X-Men: Apocalypse (2016)
+        263115,  // Logan (2017)
+        293660,  // Deadpool (2016)
+        383498,  // Deadpool 2 (2018)
+        340102,  // Dark Phoenix (2019)
+        269149,  // The New Mutants (2020)
+        533535,  // Deadpool & Wolverine (2024)
+      ];
+
+      // Fetch all MCU movies
+      const moviePromises = mcuMovieIds.map(async (movieId) => {
         try {
           const response = await fetch(
-            `${BASE_URL}/search/collection?api_key=${API_KEY}&query=${encodeURIComponent(
-              term
-            )}`
+            `${BASE_URL}/movie/${movieId}?api_key=${API_KEY}`
           );
           const data = await response.json();
-          return data.results || [];
+          return data.id ? { ...data, category: 'movie' } : null;
         } catch (error) {
-          console.error(`Error searching collections for ${term}:`, error);
-          return [];
-        }
-      });
-
-      const collectionSearchResults = await Promise.all(
-        collectionSearchPromises
-      );
-      const foundCollections = collectionSearchResults.flat();
-
-      // Remove duplicate collections
-      const uniqueCollectionIds = [
-        ...new Set(foundCollections.map((c) => c.id)),
-      ];
-
-      const collectionPromises = uniqueCollectionIds.map(
-        async (collectionId) => {
-          try {
-            const response = await fetch(
-              `${BASE_URL}/collection/${collectionId}?api_key=${API_KEY}`
-            );
-            const data = await response.json();
-            return data.parts || [];
-          } catch (error) {
-            console.error(`Error fetching collection ${collectionId}:`, error);
-            return [];
-          }
-        }
-      );
-
-      // Marvel TV Show Keywords/Search
-      const marvelTVShows = [
-        "WandaVision",
-        "The Falcon and the Winter Soldier",
-        "Loki",
-        "What If",
-        "Hawkeye",
-        "Moon Knight",
-        "Ms. Marvel",
-        "She-Hulk",
-        "Secret Invasion",
-        "Echo",
-        "Agatha All Along",
-        "Daredevil",
-        "Jessica Jones",
-        "Luke Cage",
-        "Iron Fist",
-        "The Defenders",
-        "The Punisher",
-        "Agents of S.H.I.E.L.D.",
-        "Agent Carter",
-        "Inhumans",
-        "Runaways",
-        "Cloak & Dagger",
-        "Helstrom",
-        "The Gifted",
-        "Legion",
-        "Hit-Monkey",
-        "M.O.D.O.K.",
-      ];
-
-      // Search for Marvel TV shows
-      const tvSearchPromises = marvelTVShows.map(async (showName) => {
-        try {
-          const response = await fetch(
-            `${BASE_URL}/search/tv?api_key=${API_KEY}&query=${encodeURIComponent(
-              showName
-            )}`
-          );
-          const data = await response.json();
-          return data.results?.[0] || null; // Get first result
-        } catch (error) {
-          console.error(`Error searching TV show ${showName}:`, error);
           return null;
         }
       });
 
-      const collectionsData = await Promise.all(collectionPromises);
-      const tvSearchResults = await Promise.all(tvSearchPromises);
-      const collectionMovies = collectionsData.flat();
+      // Fetch all MCU TV shows - with validation to block non-MCU content
+      const tvPromises = mcuTVShowIds.map(async (showId) => {
+        try {
+          const response = await fetch(
+            `${BASE_URL}/tv/${showId}?api_key=${API_KEY}`
+          );
+          const data = await response.json();
+          if (!data.id) return null;
+          
+          const title = (data.name || '').toLowerCase();
+          const overview = (data.overview || '').toLowerCase();
+          const originCountry = data.origin_country || [];
+          const genres = data.genres?.map(g => g.name.toLowerCase()) || [];
+          
+          // Block cooking shows
+          const cookingKeywords = ['cooking', 'chef', 'kitchen', 'recipe', 'food', 'bake', 'baking', 'culinary', 'restaurant'];
+          const isCookingShow = cookingKeywords.some(keyword => 
+            title.includes(keyword) || overview.includes(keyword)
+          );
+          if (isCookingShow) return null;
+          
+          // Block DC shows
+          const dcKeywords = ['batman', 'superman', 'wonder woman', 'justice league', 'dc comics', 'gotham', 'harley quinn', 'joker', 'aquaman', 'flash'];
+          const isDCShow = dcKeywords.some(keyword => 
+            title.includes(keyword) || overview.includes(keyword)
+          );
+          if (isDCShow) return null;
+          
+          // Block Asian shows (Korean, Japanese, Chinese, etc.) - unless it's Marvel content
+          const asianCountries = ['KR', 'JP', 'CN', 'TW', 'TH', 'IN', 'PH'];
+          const isAsianShow = originCountry.some(country => asianCountries.includes(country));
+          const isMarvelContent = title.includes('marvel') || overview.includes('marvel') || 
+                                  overview.includes('mcu') || overview.includes('avenger');
+          if (isAsianShow && !isMarvelContent) return null;
+          
+          return { ...data, category: 'tv' };
+        } catch (error) {
+          return null;
+        }
+      });
 
-      // Also fetch general Marvel content
-      const moviePromises = [];
-      for (let page = 1; page <= 5; page++) {
-        const movieParams = new URLSearchParams({
-          api_key: API_KEY,
-          page: page,
-          sort_by: "popularity.desc",
-          ...(config?.movies || {}),
-        });
-        moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
-      }
+      // Fetch Marvel Animation TV shows - with STRICT validation using production companies
+      const animationPromises = marvelAnimationTVIds.map(async (showId) => {
+        try {
+          const response = await fetch(
+            `${BASE_URL}/tv/${showId}?api_key=${API_KEY}`
+          );
+          const data = await response.json();
+          if (!data.id) return null;
+          
+          const title = (data.name || '').toLowerCase();
+          const overview = (data.overview || '').toLowerCase();
+          
+          // Check production companies for Marvel (420 = Marvel Studios, 7505 = Marvel Entertainment, 13252 = Marvel Animation)
+          const productionCompanyIds = data.production_companies?.map(c => c.id) || [];
+          const isMarvelProduction = productionCompanyIds.some(id => [420, 7505, 13252, 38679, 2301].includes(id));
+          
+          // Strict keyword validation for Marvel content
+          const marvelKeywords = [
+            'marvel', 'spider-man', 'spider man', 'x-men', 'avenger', 'hulk', 
+            'iron man', 'wolverine', 'guardians of the galaxy', 'what if',
+            'moon girl', 'm.o.d.o.k', 'hit-monkey', 'captain america', 'thor',
+            'black panther', 'doctor strange', 'ant-man', 'wakanda'
+          ];
+          
+          const hasMarvelKeyword = marvelKeywords.some(keyword => 
+            title.includes(keyword) || overview.includes(keyword)
+          );
+          
+          // Must be either a Marvel production OR have Marvel keywords
+          if (!isMarvelProduction && !hasMarvelKeyword) return null;
+          
+          return { ...data, category: 'animation' };
+        } catch (error) {
+          return null;
+        }
+      });
 
-      const tvPromises = [];
-      for (let page = 1; page <= 5; page++) {
-        const tvParams = new URLSearchParams({
-          api_key: API_KEY,
-          page: page,
-          sort_by: "popularity.desc",
-          ...(config?.tv || {}),
-        });
-        tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
-      }
+      // Fetch Marvel Animated Movies - with STRICT validation using production companies
+      const animatedMoviePromises = marvelAnimatedMovieIds.map(async (movieId) => {
+        try {
+          const response = await fetch(
+            `${BASE_URL}/movie/${movieId}?api_key=${API_KEY}`
+          );
+          const data = await response.json();
+          if (!data.id) return null;
+          
+          const title = (data.title || '').toLowerCase();
+          const overview = (data.overview || '').toLowerCase();
+          
+          // Must be animated (genre 16)
+          const isAnimated = data.genres?.some(g => g.id === 16);
+          if (!isAnimated) return null;
+          
+          // Check production companies for Marvel/Sony Spider-Verse
+          const productionCompanyIds = data.production_companies?.map(c => c.id) || [];
+          const isMarvelProduction = productionCompanyIds.some(id => [420, 7505, 13252, 38679, 2301, 5, 34].includes(id));
+          
+          // Strict keyword validation for Marvel animated content
+          const marvelKeywords = [
+            'marvel', 'spider-man', 'spider man', 'spider-verse', 'avenger', 'hulk', 
+            'iron man', 'thor', 'captain america', 'doctor strange', 'planet hulk'
+          ];
+          
+          const hasMarvelKeyword = marvelKeywords.some(keyword => 
+            title.includes(keyword) || overview.includes(keyword)
+          );
+          
+          // Must be either a Marvel production OR have Marvel keywords
+          if (!isMarvelProduction && !hasMarvelKeyword) return null;
+          
+          return { ...data, category: 'animated_movie' };
+        } catch (error) {
+          return null;
+        }
+      });
 
-      const [movieResponses, tvResponses] = await Promise.all([
+      // Fetch Fox X-Men movies - STRICTLY block any animated content
+      const xmenPromises = foxXMenMovieIds.map(async (movieId) => {
+        try {
+          const response = await fetch(
+            `${BASE_URL}/movie/${movieId}?api_key=${API_KEY}`
+          );
+          const data = await response.json();
+          if (!data.id) return null;
+          
+          // Block animated movies (genre 16 = Animation)
+          const isAnimated = data.genres?.some(g => g.id === 16);
+          if (isAnimated) return null;
+          
+          return { ...data, category: 'xmen' };
+        } catch (error) {
+          return null;
+        }
+      });
+
+      const [moviesData, tvShowsData, animationData, animatedMoviesData, xmenData] = await Promise.all([
         Promise.all(moviePromises),
         Promise.all(tvPromises),
+        Promise.all(animationPromises),
+        Promise.all(animatedMoviePromises),
+        Promise.all(xmenPromises),
       ]);
 
-      const movieDataList = await Promise.all(
-        movieResponses.map((res) => res.json())
-      );
-      const tvDataList = await Promise.all(
-        tvResponses.map((res) => res.json())
-      );
+      // Filter out null results
+      const validMovies = moviesData.filter(m => m !== null);
+      const validTVShows = tvShowsData.filter(s => s !== null);
+      const validAnimation = animationData.filter(a => a !== null);
+      const validAnimatedMovies = animatedMoviesData.filter(m => m !== null);
+      const validXMen = xmenData.filter(x => x !== null);
 
-      const allMovieResults = movieDataList.flatMap(
-        (data) => data.results || []
-      );
-      const allTVResults = tvDataList.flatMap((data) => data.results || []);
-
-      // Combine collection movies with discovered movies and remove duplicates
-      const allMovies = [...collectionMovies, ...allMovieResults];
-      const uniqueMovies = Array.from(
-        new Map(allMovies.map((movie) => [movie.id, movie])).values()
-      );
-
-      // Combine searched TV shows with discovered TV shows and remove duplicates
-      const searchedTVShows = tvSearchResults.filter((show) => show !== null);
-      const allTVShows = [...searchedTVShows, ...allTVResults];
-      const uniqueTVShows = Array.from(
-        new Map(allTVShows.map((show) => [show.id, show])).values()
-      );
-
-      const movies = uniqueMovies.map((movie) => ({
+      const movies = validMovies.map((movie) => ({
         id: movie.id,
         title: movie.title,
         image: getImageUrl(movie.poster_path, "w342"),
@@ -1418,7 +1795,7 @@ export const fetchFranchiseContent = async (franchise) => {
         overview: movie.overview,
       }));
 
-      const tvShows = uniqueTVShows.map((show) => ({
+      const tvShows = validTVShows.map((show) => ({
         id: show.id,
         title: show.name || show.title,
         image: getImageUrl(show.poster_path, "w342"),
@@ -1431,7 +1808,49 @@ export const fetchFranchiseContent = async (franchise) => {
         overview: show.overview,
       }));
 
-      return { movies, tvShows };
+      const animation = validAnimation.map((show) => ({
+        id: show.id,
+        title: show.name || show.title,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+        isAnimation: true,
+      }));
+
+      const animatedMovies = validAnimatedMovies.map((movie) => ({
+        id: movie.id,
+        title: movie.title,
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date
+          ? new Date(movie.release_date).getFullYear()
+          : "N/A",
+        type: "movie",
+        overview: movie.overview,
+        isAnimation: true,
+      }));
+
+      const xmenMovies = validXMen.map((movie) => ({
+        id: movie.id,
+        title: movie.title,
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date
+          ? new Date(movie.release_date).getFullYear()
+          : "N/A",
+        type: "movie",
+        overview: movie.overview,
+        isXMen: true,
+      }));
+
+      return { movies, tvShows, animation, animatedMovies, xmenMovies };
     }
 
     // Special handling for Star Wars - fetch collections
@@ -1444,7 +1863,7 @@ export const fetchFranchiseContent = async (franchise) => {
           const response = await fetch(
             `${BASE_URL}/search/collection?api_key=${API_KEY}&query=${encodeURIComponent(
               term
-            )}`
+            )}&include_adult=false`
           );
           const data = await response.json();
           return data.results || [];
@@ -1501,7 +1920,7 @@ export const fetchFranchiseContent = async (franchise) => {
           const response = await fetch(
             `${BASE_URL}/search/tv?api_key=${API_KEY}&query=${encodeURIComponent(
               showName
-            )}`
+            )}&include_adult=false`
           );
           const data = await response.json();
           return data.results?.[0] || null;
@@ -1522,6 +1941,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
           ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
@@ -1533,6 +1953,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
           ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
@@ -1618,7 +2039,7 @@ export const fetchFranchiseContent = async (franchise) => {
           const response = await fetch(
             `${BASE_URL}/search/collection?api_key=${API_KEY}&query=${encodeURIComponent(
               term
-            )}`
+            )}&include_adult=false`
           );
           const data = await response.json();
           return data.results || [];
@@ -1681,7 +2102,7 @@ export const fetchFranchiseContent = async (franchise) => {
           const response = await fetch(
             `${BASE_URL}/search/tv?api_key=${API_KEY}&query=${encodeURIComponent(
               showName
-            )}`
+            )}&include_adult=false`
           );
           const data = await response.json();
           return data.results?.[0] || null;
@@ -1702,6 +2123,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
           ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
@@ -1713,6 +2135,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
           ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
@@ -1852,7 +2275,7 @@ export const fetchFranchiseContent = async (franchise) => {
           const response = await fetch(
             `${BASE_URL}/search/collection?api_key=${API_KEY}&query=${encodeURIComponent(
               term
-            )}`
+            )}&include_adult=false`
           );
           const data = await response.json();
           return data.results || [];
@@ -1930,7 +2353,7 @@ export const fetchFranchiseContent = async (franchise) => {
           const response = await fetch(
             `${BASE_URL}/search/tv?api_key=${API_KEY}&query=${encodeURIComponent(
               showName
-            )}`
+            )}&include_adult=false`
           );
           const data = await response.json();
           return data.results?.[0] || null;
@@ -1950,6 +2373,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
           ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
@@ -1961,6 +2385,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
           ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
@@ -2098,7 +2523,7 @@ export const fetchFranchiseContent = async (franchise) => {
           const response = await fetch(
             `${BASE_URL}/search/collection?api_key=${API_KEY}&query=${encodeURIComponent(
               term
-            )}`
+            )}&include_adult=false`
           );
           const data = await response.json();
           return data.results || [];
@@ -2205,7 +2630,7 @@ export const fetchFranchiseContent = async (franchise) => {
           const response = await fetch(
             `${BASE_URL}/search/tv?api_key=${API_KEY}&query=${encodeURIComponent(
               showName
-            )}`
+            )}&include_adult=false`
           );
           const data = await response.json();
           return data.results?.[0] || null;
@@ -2225,6 +2650,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
           ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
@@ -2236,6 +2662,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
           ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
@@ -2323,7 +2750,7 @@ export const fetchFranchiseContent = async (franchise) => {
           const response = await fetch(
             `${BASE_URL}/search/collection?api_key=${API_KEY}&query=${encodeURIComponent(
               term
-            )}`
+            )}&include_adult=false`
           );
           const data = await response.json();
           return data.results || [];
@@ -2396,7 +2823,7 @@ export const fetchFranchiseContent = async (franchise) => {
           const response = await fetch(
             `${BASE_URL}/search/tv?api_key=${API_KEY}&query=${encodeURIComponent(
               showName
-            )}`
+            )}&include_adult=false`
           );
           const data = await response.json();
           return data.results?.[0] || null;
@@ -2416,6 +2843,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
           ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
@@ -2427,6 +2855,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
           ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
@@ -2512,7 +2941,7 @@ export const fetchFranchiseContent = async (franchise) => {
           const response = await fetch(
             `${BASE_URL}/search/collection?api_key=${API_KEY}&query=${encodeURIComponent(
               term
-            )}`
+            )}&include_adult=false`
           );
           const data = await response.json();
           return data.results || [];
@@ -2555,6 +2984,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
           ...(config?.movies || {}),
         });
         moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
@@ -2566,6 +2996,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
           ...(config?.tv || {}),
         });
         tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
@@ -2647,7 +3078,7 @@ export const fetchFranchiseContent = async (franchise) => {
           const response = await fetch(
             `${BASE_URL}/search/collection?api_key=${API_KEY}&query=${encodeURIComponent(
               term
-            )}`
+            )}&include_adult=false`
           );
           const data = await response.json();
           return data.results || [];
@@ -2691,6 +3122,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
         });
         moviePromises.push(fetch(`${BASE_URL}/movie/popular?${movieParams}`));
       }
@@ -2701,6 +3133,7 @@ export const fetchFranchiseContent = async (franchise) => {
           api_key: API_KEY,
           page: page,
           sort_by: "popularity.desc",
+          include_adult: "false",
         });
         tvPromises.push(fetch(`${BASE_URL}/tv/popular?${tvParams}`));
       }
@@ -2769,6 +3202,7 @@ export const fetchFranchiseContent = async (franchise) => {
         api_key: API_KEY,
         page: page,
         sort_by: "popularity.desc",
+        include_adult: "false",
         ...(config?.movies || {}),
       });
       moviePromises.push(fetch(`${BASE_URL}/discover/movie?${movieParams}`));
@@ -2781,6 +3215,7 @@ export const fetchFranchiseContent = async (franchise) => {
         api_key: API_KEY,
         page: page,
         sort_by: "popularity.desc",
+        include_adult: "false",
         ...(config?.tv || {}),
       });
       tvPromises.push(fetch(`${BASE_URL}/discover/tv?${tvParams}`));
@@ -2953,21 +3388,29 @@ export const fetchNewWithTrailers = async () => {
   }
 };
 
-// Fetch two featured titles for split hero (changes weekly based on date)
-export const fetchSplitHeroTitles = async () => {
+// Fetch two featured titles for split hero (excludes Top 10 items)
+export const fetchSplitHeroTitles = async (excludeIds = []) => {
   try {
     const response = await fetch(
       `${BASE_URL}/trending/all/week?api_key=${API_KEY}`
     );
     const data = await response.json();
 
+    // Filter out items that are in the Top 10 (excludeIds)
+    const filteredResults = data.results.filter(
+      (item) => !excludeIds.includes(item.id)
+    );
+
     // Use week number to determine which items to show (rotates weekly)
     const weekNumber = Math.floor(Date.now() / (7 * 24 * 60 * 60 * 1000));
-    const startIndex = (weekNumber % 5) * 2; // Rotates through top 10 items
+    const startIndex = (weekNumber % 5) * 2; // Rotates through available items
 
-    const items = data.results.slice(startIndex, startIndex + 2);
+    const items = filteredResults.slice(startIndex, startIndex + 2);
 
-    return items.map((item) => ({
+    // If not enough items after filtering, take from the beginning
+    const finalItems = items.length >= 2 ? items : filteredResults.slice(0, 2);
+
+    return finalItems.map((item) => ({
       id: item.id,
       title: item.title || item.name,
       image: getImageUrl(item.poster_path, "w342"),
@@ -2987,19 +3430,98 @@ export const fetchSplitHeroTitles = async () => {
   }
 };
 
+// Fetch a random movie or TV show for "Surprise Me" feature
+export const fetchRandomPick = async () => {
+  try {
+    // Randomly decide between movie or TV show
+    const isMovie = Math.random() > 0.5;
+    const randomPage = Math.floor(Math.random() * 20) + 1; // Random page 1-20
+
+    const endpoint = isMovie
+      ? `${BASE_URL}/discover/movie?api_key=${API_KEY}&page=${randomPage}&sort_by=popularity.desc&vote_count.gte=100&vote_average.gte=6`
+      : `${BASE_URL}/discover/tv?api_key=${API_KEY}&page=${randomPage}&sort_by=popularity.desc&vote_count.gte=100&vote_average.gte=6`;
+
+    const response = await fetch(endpoint);
+    const data = await response.json();
+
+    if (!data.results || data.results.length === 0) {
+      // Fallback to trending if discover fails
+      const trendingResponse = await fetch(
+        `${BASE_URL}/trending/all/week?api_key=${API_KEY}`
+      );
+      const trendingData = await trendingResponse.json();
+      const randomIndex = Math.floor(Math.random() * trendingData.results.length);
+      const item = trendingData.results[randomIndex];
+      
+      return {
+        id: item.id,
+        title: item.title || item.name,
+        image: getImageUrl(item.poster_path, "w342"),
+        backdrop: getBackdropUrl(item.backdrop_path, "w780"),
+        rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
+        year: item.release_date
+          ? new Date(item.release_date).getFullYear()
+          : item.first_air_date
+            ? new Date(item.first_air_date).getFullYear()
+            : "N/A",
+        type: item.media_type,
+        overview: item.overview,
+      };
+    }
+
+    // Pick a random item from results
+    const randomIndex = Math.floor(Math.random() * data.results.length);
+    const item = data.results[randomIndex];
+
+    return {
+      id: item.id,
+      title: item.title || item.name,
+      image: getImageUrl(item.poster_path, "w342"),
+      backdrop: getBackdropUrl(item.backdrop_path, "w780"),
+      rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
+      year: item.release_date
+        ? new Date(item.release_date).getFullYear()
+        : item.first_air_date
+          ? new Date(item.first_air_date).getFullYear()
+          : "N/A",
+      type: isMovie ? "movie" : "tv",
+      overview: item.overview,
+    };
+  } catch (error) {
+    console.error("Error fetching random pick:", error);
+    return null;
+  }
+};
+
 
 // Fetch TV shows with upcoming episode information for Stories section
+// Strictly shows episodes airing within the next 7 days
 export const fetchUpcomingEpisodes = async () => {
   try {
-    // Get popular TV shows that are currently airing
-    const response = await fetch(
-      `${BASE_URL}/tv/on_the_air?api_key=${API_KEY}&page=1`
-    );
-    const data = await response.json();
+    // Get TV shows that are currently airing - fetch multiple pages for better coverage
+    const [page1Response, page2Response] = await Promise.all([
+      fetch(`${BASE_URL}/tv/on_the_air?api_key=${API_KEY}&page=1`),
+      fetch(`${BASE_URL}/tv/on_the_air?api_key=${API_KEY}&page=2`),
+    ]);
+    
+    const [page1Data, page2Data] = await Promise.all([
+      page1Response.json(),
+      page2Response.json(),
+    ]);
+
+    const allShows = [...(page1Data.results || []), ...(page2Data.results || [])];
+
+    // Get today's date at midnight for accurate comparison
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Calculate date 7 days from now
+    const oneWeekFromNow = new Date(today);
+    oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7);
 
     // Get detailed info for each show including next episode
     const showsWithEpisodes = await Promise.all(
-      data.results.slice(0, 15).map(async (show) => {
+      allShows.slice(0, 30).map(async (show) => {
         try {
           const detailResponse = await fetch(
             `${BASE_URL}/tv/${show.id}?api_key=${API_KEY}`
@@ -3007,34 +3529,20 @@ export const fetchUpcomingEpisodes = async () => {
           const detail = await detailResponse.json();
 
           const nextEpisode = detail.next_episode_to_air;
-          const lastEpisode = detail.last_episode_to_air;
 
-          // Format the air date nicely
-          let airDateText = '';
-          let episodeInfo = '';
+          // Only include shows with confirmed upcoming episodes
+          if (!nextEpisode || !nextEpisode.air_date) return null;
 
-          if (nextEpisode) {
-            const airDate = new Date(nextEpisode.air_date);
-            const today = new Date();
-            const diffDays = Math.ceil((airDate - today) / (1000 * 60 * 60 * 24));
+          const airDate = new Date(nextEpisode.air_date);
+          airDate.setHours(0, 0, 0, 0);
+          
+          // Strictly filter: only episodes airing today through 7 days from now
+          if (airDate < today || airDate > oneWeekFromNow) return null;
 
-            if (diffDays === 0) {
-              airDateText = 'Today';
-            } else if (diffDays === 1) {
-              airDateText = 'Tomorrow';
-            } else if (diffDays > 0 && diffDays <= 7) {
-              airDateText = airDate.toLocaleDateString('en-US', { weekday: 'long' });
-            } else if (diffDays > 0) {
-              airDateText = airDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            }
+          // Format as actual date: "Jan 15"
+          const airDateText = airDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
-            episodeInfo = `S${String(nextEpisode.season_number).padStart(2, '0')}E${String(nextEpisode.episode_number).padStart(2, '0')}`;
-          } else if (lastEpisode) {
-            airDateText = 'New Episode Out';
-            episodeInfo = `S${String(lastEpisode.season_number).padStart(2, '0')}E${String(lastEpisode.episode_number).padStart(2, '0')}`;
-          }
-
-          if (!airDateText) return null;
+          const episodeInfo = `S${String(nextEpisode.season_number).padStart(2, '0')}E${String(nextEpisode.episode_number).padStart(2, '0')}`;
 
           return {
             id: show.id,
@@ -3044,10 +3552,11 @@ export const fetchUpcomingEpisodes = async () => {
             rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
             year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
             type: "tv",
-            overview: nextEpisode?.overview || lastEpisode?.overview || show.overview,
+            overview: nextEpisode.overview || show.overview,
             airDateText,
+            airDateRaw: nextEpisode.air_date, // For sorting
             episodeInfo,
-            episodeName: nextEpisode?.name || lastEpisode?.name || '',
+            episodeName: nextEpisode.name || '',
             status: detail.status,
           };
         } catch (e) {
@@ -3056,10 +3565,319 @@ export const fetchUpcomingEpisodes = async () => {
       })
     );
 
-    // Filter out nulls and return valid shows
-    return showsWithEpisodes.filter(show => show !== null);
+    // Filter out nulls and sort by air date (soonest first)
+    return showsWithEpisodes
+      .filter(show => show !== null)
+      .sort((a, b) => new Date(a.airDateRaw) - new Date(b.airDateRaw))
+      .slice(0, 15); // Limit to 15 shows
   } catch (error) {
     console.error("Error fetching upcoming episodes:", error);
     return [];
+  }
+};
+
+// Franchise-specific validation rules
+const FRANCHISE_VALIDATORS = {
+  Marvel: {
+    companyIds: [420, 7505, 176762], // Marvel Studios, Marvel Entertainment, Marvel Television
+    keywords: ['marvel', 'avengers', 'x-men', 'spider-man', 'iron man', 'thor', 'hulk', 'captain america', 'guardians of the galaxy', 'black panther', 'ant-man', 'doctor strange', 'deadpool', 'wolverine', 'fantastic four', 'daredevil', 'punisher', 'jessica jones', 'luke cage', 'iron fist'],
+    excludeKeywords: ['parody', 'xxx', 'porn', 'adult', 'hentai', 'erotic', 'sexy', 'nude', 'naked', 'sex'],
+  },
+  "Star Wars": {
+    companyIds: [1, 4171], // Lucasfilm, Lucasfilm Animation
+    keywords: ['star wars', 'jedi', 'sith', 'skywalker', 'mandalorian', 'clone wars', 'rebels', 'force awakens', 'last jedi', 'rise of skywalker', 'rogue one', 'solo', 'andor', 'ahsoka', 'obi-wan', 'boba fett'],
+    excludeKeywords: ['parody', 'xxx', 'porn', 'adult', 'hentai', 'erotic', 'sexy', 'nude', 'naked', 'sex'],
+  },
+  DC: {
+    companyIds: [429, 9993, 128064], // DC Entertainment, DC Comics, DC Studios
+    keywords: ['batman', 'superman', 'wonder woman', 'justice league', 'aquaman', 'flash', 'shazam', 'suicide squad', 'harley quinn', 'joker', 'green lantern', 'dark knight', 'gotham', 'titans', 'doom patrol', 'peacemaker', 'sandman', 'constantine', 'swamp thing', 'watchmen'],
+    excludeKeywords: ['parody', 'xxx', 'porn', 'adult', 'hentai', 'erotic', 'sexy', 'nude', 'naked', 'sex'],
+  },
+  Disney: {
+    companyIds: [2, 3, 6125], // Walt Disney Pictures, Pixar, Walt Disney Animation Studios
+    keywords: ['disney', 'pixar', 'frozen', 'moana', 'encanto', 'toy story', 'finding nemo', 'incredibles', 'lion king', 'little mermaid', 'beauty and the beast', 'aladdin', 'tangled', 'zootopia', 'coco', 'up', 'wall-e', 'ratatouille', 'monsters inc', 'cars'],
+    excludeKeywords: ['parody', 'xxx', 'porn', 'adult', 'hentai', 'erotic', 'sexy', 'nude', 'naked', 'sex'],
+  },
+  "Disney+": {
+    companyIds: [2, 3, 6125, 420, 1], // Disney, Pixar, Walt Disney Animation, Marvel, Lucasfilm
+    keywords: ['disney', 'pixar', 'marvel', 'star wars'],
+    excludeKeywords: ['parody', 'xxx', 'porn', 'adult', 'hentai', 'erotic', 'sexy', 'nude', 'naked', 'sex'],
+  },
+  Netflix: {
+    networkIds: [213],
+    companyIds: [213], // Netflix
+    excludeKeywords: ['parody', 'xxx', 'porn', 'adult', 'hentai', 'erotic', 'sexy', 'nude', 'naked', 'sex'],
+  },
+  "Netflix Originals": {
+    networkIds: [213],
+    companyIds: [213],
+    excludeKeywords: ['parody', 'xxx', 'porn', 'adult', 'hentai', 'erotic', 'sexy', 'nude', 'naked', 'sex'],
+  },
+  "HBO Max": {
+    networkIds: [49, 3186], // HBO, HBO Max
+    companyIds: [174], // Warner Bros
+    excludeKeywords: ['parody', 'xxx', 'porn', 'adult', 'hentai', 'erotic', 'sexy', 'nude', 'naked', 'sex'],
+  },
+  Max: {
+    networkIds: [49, 3186],
+    companyIds: [174],
+    excludeKeywords: ['parody', 'xxx', 'porn', 'adult', 'hentai', 'erotic', 'sexy', 'nude', 'naked', 'sex'],
+  },
+  Anime: {
+    originCountries: ['JP'],
+    genres: [16], // Animation
+    excludeKeywords: ['hentai', 'xxx', 'porn', 'adult', 'ecchi', 'erotic', 'sexy', 'nude', 'naked', 'sex', 'uncensored'],
+  },
+};
+
+// Validate if content belongs to franchise
+const validateFranchiseContent = (item, franchise, titleLower) => {
+  const validator = FRANCHISE_VALIDATORS[franchise];
+  if (!validator) return true; // No validator, accept all
+  
+  // Check for excluded keywords in title
+  if (validator.excludeKeywords) {
+    for (const keyword of validator.excludeKeywords) {
+      if (titleLower.includes(keyword)) {
+        return false;
+      }
+    }
+  }
+  
+  // Check for required keywords in title (if specified)
+  if (validator.keywords && validator.keywords.length > 0) {
+    const hasKeyword = validator.keywords.some(keyword => 
+      titleLower.includes(keyword.toLowerCase())
+    );
+    if (hasKeyword) return true;
+  }
+  
+  return true; // Default accept if no keyword match required
+};
+
+// Helper function to check if content contains adult/inappropriate keywords
+const isAdultContent = (item) => {
+  const title = (item.title || item.name || '').toLowerCase();
+  const overview = (item.overview || '').toLowerCase();
+  
+  const adultKeywords = [
+    'xxx', 'porn', 'adult', 'hentai', 'erotic', 'sexy', 'nude', 'naked', 
+    'sex', 'parody', 'ecchi', 'uncensored', 'explicit', 'nsfw', '18+',
+    'softcore', 'hardcore', 'fetish', 'bondage', 'stripper'
+  ];
+  
+  for (const keyword of adultKeywords) {
+    if (title.includes(keyword) || overview.includes(keyword)) {
+      return true;
+    }
+  }
+  
+  // Also check the adult flag from TMDB
+  if (item.adult === true) {
+    return true;
+  }
+  
+  return false;
+};
+
+// Fetch structured franchise content with categorized sections and filtering
+export const fetchStructuredFranchiseContent = async (franchise) => {
+  try {
+    const result = await fetchFranchiseContent(franchise);
+    const { movies, tvShows } = result;
+    const animation = result.animation || []; // Marvel returns animation separately
+    const animatedMovies = result.animatedMovies || []; // Marvel animated movies
+    const xmenMovies = result.xmenMovies || []; // Marvel returns X-Men separately
+    
+    if (!movies.length && !tvShows.length && !animation.length && !xmenMovies.length && !animatedMovies.length) {
+      return { sections: [] };
+    }
+
+    const validator = FRANCHISE_VALIDATORS[franchise];
+    
+    // Special handling for Marvel - use strict MCU content only
+    if (franchise === "Marvel") {
+      const sections = [];
+      
+      // Sort movies by year (chronological)
+      const sortedMovies = [...movies].sort((a, b) => (a.year || 0) - (b.year || 0));
+      
+      // Phase 1 (2008-2012)
+      const phase1 = sortedMovies.filter(m => m.year >= 2008 && m.year <= 2012);
+      if (phase1.length > 0) {
+        sections.push({ id: "phase_1", title: "Phase 1 (2008-2012)", data: phase1 });
+      }
+      
+      // Phase 2 (2013-2015)
+      const phase2 = sortedMovies.filter(m => m.year >= 2013 && m.year <= 2015);
+      if (phase2.length > 0) {
+        sections.push({ id: "phase_2", title: "Phase 2 (2013-2015)", data: phase2 });
+      }
+      
+      // Phase 3 (2016-2019)
+      const phase3 = sortedMovies.filter(m => m.year >= 2016 && m.year <= 2019);
+      if (phase3.length > 0) {
+        sections.push({ id: "phase_3", title: "Phase 3 (2016-2019)", data: phase3 });
+      }
+      
+      // Phase 4 (2021-2023)
+      const phase4Movies = sortedMovies.filter(m => m.year >= 2021 && m.year <= 2023);
+      const phase4Shows = tvShows.filter(s => s.year >= 2021 && s.year <= 2022);
+      const phase4 = [...phase4Movies, ...phase4Shows].sort((a, b) => (a.year || 0) - (b.year || 0));
+      if (phase4.length > 0) {
+        sections.push({ id: "phase_4", title: "Phase 4 (2021-2023)", data: phase4 });
+      }
+      
+      // Phase 5 (2023-2026)
+      const phase5Movies = sortedMovies.filter(m => m.year >= 2024 || (m.year === 2023 && !phase4Movies.includes(m)));
+      const phase5Shows = tvShows.filter(s => s.year >= 2023);
+      const phase5 = [...phase5Movies, ...phase5Shows].sort((a, b) => (a.year || 0) - (b.year || 0));
+      if (phase5.length > 0) {
+        sections.push({ id: "phase_5", title: "Phase 5 (2023-2026)", data: phase5 });
+      }
+      
+      // Fox X-Men Movies (separate row)
+      if (xmenMovies.length > 0) {
+        const sortedXMen = [...xmenMovies].sort((a, b) => (a.year || 0) - (b.year || 0));
+        sections.push({ id: "xmen", title: "X-Men (Fox)", data: sortedXMen });
+      }
+      
+      // Marvel Animation - combine TV shows and movies, sorted by year
+      const allAnimation = [...animation, ...animatedMovies];
+      if (allAnimation.length > 0) {
+        const sortedAnimation = [...allAnimation].sort((a, b) => (b.year || 0) - (a.year || 0));
+        sections.push({ id: "animation", title: "Marvel Animation", data: sortedAnimation });
+      }
+      
+      // All MCU TV Shows
+      if (tvShows.length > 0) {
+        sections.push({ id: "all_tv", title: "Disney+ Series", data: tvShows });
+      }
+      
+      return { sections };
+    }
+    
+    // Filter movies - remove adult content and unrelated content
+    const filteredMovies = movies.filter(movie => {
+      const titleLower = (movie.title || '').toLowerCase();
+      const overviewLower = (movie.overview || '').toLowerCase();
+      
+      // Skip adult content using comprehensive check
+      if (isAdultContent(movie)) return false;
+      
+      // Check excluded keywords in title and overview
+      if (validator?.excludeKeywords) {
+        for (const keyword of validator.excludeKeywords) {
+          if (titleLower.includes(keyword) || overviewLower.includes(keyword)) {
+            return false;
+          }
+        }
+      }
+      
+      return true;
+    });
+
+    // Filter TV shows - remove adult content and unrelated content
+    const filteredTVShows = tvShows.filter(show => {
+      const titleLower = (show.title || '').toLowerCase();
+      const overviewLower = (show.overview || '').toLowerCase();
+      
+      // Skip adult content using comprehensive check
+      if (isAdultContent(show)) return false;
+      
+      // Check excluded keywords in title and overview
+      if (validator?.excludeKeywords) {
+        for (const keyword of validator.excludeKeywords) {
+          if (titleLower.includes(keyword) || overviewLower.includes(keyword)) {
+            return false;
+          }
+        }
+      }
+      
+      return true;
+    });
+
+    const sections = [];
+
+    // Add movies section if available
+    if (filteredMovies.length > 0) {
+      // Sort by rating for "Top Rated" section
+      const topRatedMovies = [...filteredMovies]
+        .filter(m => parseFloat(m.rating) >= 6.0) // Only include well-rated content
+        .sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating))
+        .slice(0, 20);
+      
+      // Sort by year for "Recent" section
+      const recentMovies = [...filteredMovies]
+        .filter(m => m.year && m.year >= 2015) // Recent content only
+        .sort((a, b) => (b.year || 0) - (a.year || 0))
+        .slice(0, 20);
+
+      if (topRatedMovies.length > 0) {
+        sections.push({
+          id: "top_rated_movies",
+          title: "Top Rated Movies",
+          data: topRatedMovies,
+        });
+      }
+
+      if (recentMovies.length > 0) {
+        sections.push({
+          id: "recent_movies",
+          title: "Recent Movies",
+          data: recentMovies,
+        });
+      }
+
+      // All movies section
+      sections.push({
+        id: "all_movies",
+        title: "All Movies",
+        data: filteredMovies,
+      });
+    }
+
+    // Add TV shows section if available
+    if (filteredTVShows.length > 0) {
+      // Sort by rating for "Top Rated" section
+      const topRatedShows = [...filteredTVShows]
+        .filter(s => parseFloat(s.rating) >= 6.0)
+        .sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating))
+        .slice(0, 20);
+      
+      // Sort by year for "Recent" section
+      const recentShows = [...filteredTVShows]
+        .filter(s => s.year && s.year >= 2015)
+        .sort((a, b) => (b.year || 0) - (a.year || 0))
+        .slice(0, 20);
+
+      if (topRatedShows.length > 0) {
+        sections.push({
+          id: "top_rated_tv",
+          title: "Top Rated TV Shows",
+          data: topRatedShows,
+        });
+      }
+
+      if (recentShows.length > 0) {
+        sections.push({
+          id: "recent_tv",
+          title: "Recent TV Shows",
+          data: recentShows,
+        });
+      }
+
+      // All TV shows section
+      sections.push({
+        id: "all_tv",
+        title: "All TV Shows",
+        data: filteredTVShows,
+      });
+    }
+
+    return { sections };
+  } catch (error) {
+    console.error("Error fetching structured franchise content:", error);
+    return { sections: [] };
   }
 };

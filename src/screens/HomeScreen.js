@@ -31,6 +31,7 @@ import {
   fetchTop10ThisWeek,
   fetchUpcomingEpisodes,
   fetchSplitHeroTitles,
+  fetchRandomPick,
 } from "../services/tmdbApi";
 import { SkeletonRow } from "../components/SkeletonLoader";
 import { getUserList, addToList, removeFromList, isInList, getContinueWatching } from "../services/supabaseService";
@@ -48,8 +49,6 @@ const CONTENT_TABS = TABS;
 
 const SECTIONS_CONFIG = {
   Home: [
-    { title: "Trending Now", fn: fetchTrending, params: ["week"], id: "trending" },
-    { title: "Popular on LeeTV", fn: fetchPopularMovies, params: [1], id: "pop_movies" },
     { title: "Anime", fn: fetchAnime, params: [1], id: "anime" },
   ],
   Movies: [
@@ -119,6 +118,7 @@ const HorizontalList = memo(({ title, data, loading, onShowPress }) => {
 
 const FranchiseRow = memo(({ navigation }) => (
   <View style={styles.franchiseSection}>
+    <Text style={styles.sectionTitle}>Browse by Network</Text>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.franchiseList}>
       {FRANCHISE_ICONS.map((item, index) => (
         <TouchableOpacity
@@ -185,10 +185,38 @@ const Top10Row = memo(({ data, navigation, loading }) => {
   if (loading) return <SkeletonRow />;
   if (!data || data.length === 0) return null;
 
+  // Render number with black outline effect
+  const renderNumber = (num) => {
+    const offsets = [
+      { x: -2, y: 0 }, { x: 2, y: 0 }, { x: 0, y: -2 }, { x: 0, y: 2 },
+      { x: -2, y: -2 }, { x: 2, y: -2 }, { x: -2, y: 2 }, { x: 2, y: 2 },
+      { x: -1, y: 0 }, { x: 1, y: 0 }, { x: 0, y: -1 }, { x: 0, y: 1 },
+    ];
+    
+    return (
+      <View style={styles.top10NumberWrapper}>
+        {/* Black outline layers */}
+        {offsets.map((offset, i) => (
+          <Text
+            key={i}
+            style={[
+              styles.top10NumberOutline,
+              { left: offset.x, top: offset.y }
+            ]}
+          >
+            {num}
+          </Text>
+        ))}
+        {/* White fill on top */}
+        <Text style={styles.top10Number}>{num}</Text>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.section}>
       <View style={styles.top10Header}>
-        <Text style={styles.sectionTitle}>Top 10 This Week</Text>
+        <Text style={styles.top10Title}>Top 10 This Week</Text>
         <View style={styles.top10Badge}>
           <Text style={styles.top10BadgeText}>TOP 10</Text>
         </View>
@@ -201,8 +229,8 @@ const Top10Row = memo(({ data, navigation, loading }) => {
             onPress={() => navigation.navigate("ShowDetails", { show: item })}
             activeOpacity={0.8}
           >
-            <View style={styles.top10NumberBg}>
-              <Text style={styles.top10Number}>{index + 1}</Text>
+            <View style={styles.top10NumberContainer}>
+              {renderNumber(index + 1)}
             </View>
             <Image source={{ uri: item.image }} style={styles.top10Image} resizeMode="cover" />
           </TouchableOpacity>
@@ -216,21 +244,25 @@ const Top10Row = memo(({ data, navigation, loading }) => {
   );
 });
 
-// Split Hero Section - Premium Featured Section (Full-width spotlight cards)
+// Split Hero Section - Premium Featured Section (Full-width spotlight cards with transparent blending)
 const SplitHeroSection = memo(({ items, navigation }) => {
   if (!items || items.length < 2) return null;
 
   return (
     <View style={styles.featuredContainer}>
       <View style={styles.featuredHeader}>
-        <View style={styles.featuredTitleRow}>
-          <Ionicons name="flame" size={20} color="#e50914" />
-          <Text style={styles.featuredSectionTitle}>Featured</Text>
-        </View>
+        <Text style={styles.featuredSectionTitle}>Featured</Text>
         <Text style={styles.featuredSubtitle}>Handpicked for you</Text>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.featuredScroll}>
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false} 
+        contentContainerStyle={styles.featuredScroll}
+        decelerationRate="fast"
+        snapToInterval={width * 0.85 + 12}
+        snapToAlignment="start"
+      >
         {items.map((item, index) => (
           <TouchableOpacity
             key={item.id}
@@ -239,8 +271,25 @@ const SplitHeroSection = memo(({ items, navigation }) => {
             activeOpacity={0.95}
           >
             <Image source={{ uri: item.backdrop || item.image }} style={styles.featuredImage} resizeMode="cover" />
+            {/* Left edge fade */}
             <LinearGradient
-              colors={["transparent", "rgba(0,0,0,0.3)", "rgba(1,14,31,0.98)"]}
+              colors={["rgba(1,14,31,0.6)", "transparent"]}
+              start={{ x: 0, y: 0.5 }}
+              end={{ x: 0.15, y: 0.5 }}
+              style={[StyleSheet.absoluteFillObject, { borderRadius: 12 }]}
+              pointerEvents="none"
+            />
+            {/* Right edge fade */}
+            <LinearGradient
+              colors={["transparent", "rgba(1,14,31,0.6)"]}
+              start={{ x: 0.85, y: 0.5 }}
+              end={{ x: 1, y: 0.5 }}
+              style={[StyleSheet.absoluteFillObject, { borderRadius: 12 }]}
+              pointerEvents="none"
+            />
+            {/* Bottom content gradient */}
+            <LinearGradient
+              colors={["transparent", "rgba(0,0,0,0.4)", "rgba(1,14,31,0.98)"]}
               locations={[0, 0.4, 1]}
               style={styles.featuredGradient}
             >
@@ -308,7 +357,7 @@ const StoriesSection = memo(({ data, navigation, onStoryPress }) => {
 
   return (
     <View style={styles.storiesContainer}>
-      <Text style={styles.sectionTitle}>Episode Updates</Text>
+      <Text style={styles.sectionTitle}>New Episodes</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.storiesList}>
         {data.map((item, index) => (
           <TouchableOpacity
@@ -338,16 +387,92 @@ const StoriesSection = memo(({ data, navigation, onStoryPress }) => {
   );
 });
 
+// Random Pick Section - "Surprise Me" feature
+const RandomPickSection = memo(({ navigation, onSurpriseMe, isLoading }) => {
+  return (
+    <View style={styles.randomPickContainer}>
+      <LinearGradient
+        colors={["rgba(55,209,228,0.15)", "rgba(55,209,228,0.05)", "transparent"]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.randomPickGradient}
+      >
+        <View style={styles.randomPickContent}>
+          <View style={styles.randomPickTextContainer}>
+            <View style={styles.randomPickIconRow}>
+              <Ionicons name="shuffle" size={24} color="#37d1e4" />
+              <Text style={styles.randomPickTitle}>Can't Decide?</Text>
+            </View>
+            <Text style={styles.randomPickSubtitle}>Let us pick something amazing for you</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.surpriseMeButton, isLoading && styles.surpriseMeButtonDisabled]}
+            onPress={onSurpriseMe}
+            disabled={isLoading}
+            activeOpacity={0.8}
+          >
+            {isLoading ? (
+              <Animated.View style={styles.surpriseMeLoading}>
+                <Ionicons name="sync" size={20} color="#000" />
+              </Animated.View>
+            ) : (
+              <>
+                <Ionicons name="dice" size={20} color="#000" />
+                <Text style={styles.surpriseMeText}>Surprise Me</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+});
+
 // Story Viewer Modal - Episode Updates with static images
 const StoryViewer = memo(({ visible, stories, initialIndex, onClose, navigation }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [isDescExpanded, setIsDescExpanded] = useState(false);
+  const [inList, setInList] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   const currentStory = stories[currentIndex];
 
   useEffect(() => {
     setCurrentIndex(initialIndex);
+    setIsDescExpanded(false);
   }, [initialIndex]);
+
+  useEffect(() => {
+    if (currentStory?.id) {
+      checkListStatus();
+    }
+  }, [currentStory?.id]);
+
+  const checkListStatus = async () => {
+    if (!currentStory) return;
+    try {
+      const status = await isInList(currentStory.id, currentStory.type || "tv");
+      setInList(status);
+    } catch (error) {
+      console.error("Error checking list status:", error);
+    }
+  };
+
+  const handleListToggle = async () => {
+    if (!currentStory) return;
+    const mediaType = currentStory.type || "tv";
+    try {
+      if (inList) {
+        await removeFromList(currentStory.id, mediaType);
+        setInList(false);
+      } else {
+        await addToList({ ...currentStory, media_type: mediaType });
+        setInList(true);
+      }
+    } catch (error) {
+      console.error("Error toggling list:", error);
+    }
+  };
 
   useEffect(() => {
     if (visible && currentStory) {
@@ -366,6 +491,7 @@ const StoryViewer = memo(({ visible, stories, initialIndex, onClose, navigation 
   const goToNext = () => {
     if (currentIndex < stories.length - 1) {
       setCurrentIndex(currentIndex + 1);
+      setIsDescExpanded(false);
     } else {
       onClose();
     }
@@ -374,10 +500,14 @@ const StoryViewer = memo(({ visible, stories, initialIndex, onClose, navigation 
   const goToPrev = () => {
     if (currentIndex > 0) {
       setCurrentIndex(currentIndex - 1);
+      setIsDescExpanded(false);
     }
   };
 
   if (!visible || !currentStory) return null;
+
+  const description = currentStory.overview || "No description available.";
+  const shouldShowSeeMore = description.length > 120;
 
   return (
     <Modal visible={visible} animationType="fade" transparent={false}>
@@ -444,7 +574,27 @@ const StoryViewer = memo(({ visible, stories, initialIndex, onClose, navigation 
           {currentStory.episodeName && (
             <Text style={styles.storyEpisodeName}>"{currentStory.episodeName}"</Text>
           )}
-          <Text style={styles.storyBottomOverview} numberOfLines={3}>{currentStory.overview}</Text>
+          
+          {/* Description with See More */}
+          <View style={styles.storyDescriptionContainer}>
+            <Text 
+              style={styles.storyBottomOverview} 
+              numberOfLines={isDescExpanded ? undefined : 3}
+            >
+              {description}
+            </Text>
+            {!isDescExpanded && shouldShowSeeMore && (
+              <TouchableOpacity onPress={() => setIsDescExpanded(true)} style={styles.storySeeMoreBtn}>
+                <Text style={styles.storySeeMoreText}>See More</Text>
+              </TouchableOpacity>
+            )}
+            {isDescExpanded && (
+              <TouchableOpacity onPress={() => setIsDescExpanded(false)} style={styles.storySeeMoreBtn}>
+                <Text style={styles.storySeeMoreText}>See Less</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          
           <View style={styles.storyBottomButtons}>
             <TouchableOpacity
               style={styles.storyWatchBtn}
@@ -456,8 +606,8 @@ const StoryViewer = memo(({ visible, stories, initialIndex, onClose, navigation 
               <Ionicons name="play" size={18} color="#000" />
               <Text style={styles.storyWatchBtnText}>View Details</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.storyInfoBtn}>
-              <Ionicons name="add" size={24} color="#fff" />
+            <TouchableOpacity style={styles.storyInfoBtn} onPress={handleListToggle}>
+              <Ionicons name={inList ? "checkmark" : "add"} size={24} color="#fff" />
             </TouchableOpacity>
           </View>
         </LinearGradient>
@@ -501,21 +651,49 @@ const FeaturedHero = memo(({ item, navigation }) => {
     }
   };
 
+  const handlePlay = () => {
+    if (!item) return;
+    if (item.type === "movie") {
+      navigation.navigate("VideoPlayer", {
+        title: item.title,
+        mediaId: item.id,
+        mediaType: "movie",
+        poster_path: item.poster_path,
+        backdrop_path: item.backdrop_path,
+      });
+    } else {
+      // For TV shows, play first episode
+      navigation.navigate("VideoPlayer", {
+        title: item.title,
+        mediaId: item.id,
+        mediaType: "tv",
+        season: 1,
+        episode: 1,
+        poster_path: item.poster_path,
+        backdrop_path: item.backdrop_path,
+      });
+    }
+  };
+
   if (!item) return null;
 
   return (
-    <View style={styles.heroContainer}>
+    <TouchableOpacity 
+      style={styles.heroContainer} 
+      activeOpacity={0.95}
+      onPress={() => navigation.navigate("ShowDetails", { show: item })}
+    >
       <Image source={{ uri: item.backdrop || item.image }} style={styles.heroImage} resizeMode="cover" />
       <LinearGradient colors={["transparent", "rgba(1,14,31,0.8)", "#010e1f"]} locations={[0.4, 0.75, 1]} style={styles.heroGradient}>
         <View style={styles.heroContent}>
           <Text style={styles.heroTitle}>{item.title}</Text>
-          <Text style={styles.heroGenres}>Gritty • Dark • Thriller • Drama • Crime</Text>
+          <Text style={styles.heroGenres}>{item.type === 'tv' ? 'Series' : 'Film'} • {item.rating} ★ • {item.year}</Text>
           <View style={styles.heroButtons}>
             <TouchableOpacity style={styles.myListButton} onPress={handleListToggle}>
               <Ionicons name={inList ? "checkmark" : "add"} size={24} color="#fff" />
               <Text style={styles.myListText}>{inList ? "Added" : "My List"}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.playButton} onPress={() => navigation.navigate("ShowDetails", { show: item })}>
+            <TouchableOpacity style={styles.playButton} onPress={handlePlay}>
               <Ionicons name="play" size={20} color="#000" />
               <Text style={styles.playButtonText}>Play</Text>
             </TouchableOpacity>
@@ -526,11 +704,11 @@ const FeaturedHero = memo(({ item, navigation }) => {
           </View>
         </View>
       </LinearGradient>
-    </View>
+    </TouchableOpacity>
   );
 });
 
-const TabContent = memo(({ tabId, sections, featuredItem, navigation, myListData, myListLoading, continueWatchingData, continueWatchingLoading, top10Data, top10Loading, splitHeroData, storiesData, onStoryPress }) => {
+const TabContent = memo(({ tabId, sections, featuredItem, navigation, myListData, myListLoading, continueWatchingData, continueWatchingLoading, top10Data, top10Loading, splitHeroData, storiesData, onStoryPress, onSurpriseMe, surpriseMeLoading }) => {
   if (tabId === "My List") {
     return (
       <ScrollView style={styles.myListContainer} showsVerticalScrollIndicator={false}>
@@ -590,11 +768,12 @@ const TabContent = memo(({ tabId, sections, featuredItem, navigation, myListData
           {tabId === "Home" && (
             <>
               <FeaturedHero item={featuredItem} navigation={navigation} />
-              <FranchiseRow navigation={navigation} />
               <ContinueWatchingRow data={continueWatchingData} navigation={navigation} loading={continueWatchingLoading} />
               <Top10Row data={top10Data} navigation={navigation} loading={top10Loading} />
-              <SplitHeroSection items={splitHeroData} navigation={navigation} />
               <StoriesSection data={storiesData} navigation={navigation} onStoryPress={onStoryPress} />
+              <SplitHeroSection items={splitHeroData} navigation={navigation} />
+              <FranchiseRow navigation={navigation} />
+              <RandomPickSection navigation={navigation} onSurpriseMe={onSurpriseMe} isLoading={surpriseMeLoading} />
             </>
           )}
           {tabId !== "Home" && tabId !== "TV Shows" && tabId !== "Movies" && (
@@ -674,6 +853,7 @@ const HomeScreen = ({ navigation }) => {
   const [storiesData, setStoriesData] = useState([]);
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [storyInitialIndex, setStoryInitialIndex] = useState(0);
+  const [surpriseMeLoading, setSurpriseMeLoading] = useState(false);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const indicatorAnim = useRef(new Animated.Value(0)).current;
@@ -683,8 +863,7 @@ const HomeScreen = ({ navigation }) => {
   useEffect(() => {
     loadFeaturedItem();
     loadContinueWatching();
-    loadTop10();
-    loadSplitHero();
+    loadTop10AndSplitHero();
     loadStories();
   }, []);
 
@@ -724,24 +903,21 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
-  const loadTop10 = async () => {
+  // Load Top 10 first, then load Split Hero excluding Top 10 IDs
+  const loadTop10AndSplitHero = async () => {
     setTop10Loading(true);
     try {
-      const data = await fetchTop10ThisWeek();
-      setTop10Data(data);
-    } catch (e) {
-      console.error("Error loading top 10:", e);
-    } finally {
+      const top10 = await fetchTop10ThisWeek();
+      setTop10Data(top10);
       setTop10Loading(false);
-    }
-  };
-
-  const loadSplitHero = async () => {
-    try {
-      const data = await fetchSplitHeroTitles();
-      setSplitHeroData(data);
+      
+      // Now load split hero, excluding Top 10 IDs
+      const top10Ids = top10.map(item => item.id);
+      const splitHero = await fetchSplitHeroTitles(top10Ids);
+      setSplitHeroData(splitHero);
     } catch (e) {
-      console.error("Error loading split hero:", e);
+      console.error("Error loading top 10 or split hero:", e);
+      setTop10Loading(false);
     }
   };
 
@@ -758,6 +934,20 @@ const HomeScreen = ({ navigation }) => {
     setStoryInitialIndex(index);
     setStoryViewerVisible(true);
   }, []);
+
+  const handleSurpriseMe = useCallback(async () => {
+    setSurpriseMeLoading(true);
+    try {
+      const randomShow = await fetchRandomPick();
+      if (randomShow) {
+        navigation.navigate("ShowDetails", { show: randomShow });
+      }
+    } catch (e) {
+      console.error("Error fetching random pick:", e);
+    } finally {
+      setSurpriseMeLoading(false);
+    }
+  }, [navigation]);
 
   const loadMyList = async () => {
     setMyListLoading(true);
@@ -850,7 +1040,7 @@ const HomeScreen = ({ navigation }) => {
           <TouchableOpacity onPress={() => navigation.navigate("Search")} style={styles.headerIcon}>
             <Ionicons name="search" size={24} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate("EditProfile")} style={styles.headerIcon}>
+          <TouchableOpacity onPress={() => navigation.navigate("UserProfile")} style={styles.headerIcon}>
             <Ionicons name="person-circle-outline" size={28} color="#fff" />
           </TouchableOpacity>
         </View>
@@ -879,6 +1069,8 @@ const HomeScreen = ({ navigation }) => {
                 splitHeroData={splitHeroData}
                 storiesData={storiesData}
                 onStoryPress={handleStoryPress}
+                onSurpriseMe={handleSurpriseMe}
+                surpriseMeLoading={surpriseMeLoading}
               />
             </View>
           ))}
@@ -911,7 +1103,7 @@ const styles = StyleSheet.create({
   contentArea: { flex: 1, overflow: "hidden" },
   tabsContainer: { flexDirection: "row", width: width * CONTENT_TABS.length, flex: 1 },
   tabPane: { width, flex: 1 },
-  listContent: { paddingBottom: 100 },
+  listContent: { paddingBottom: 20 },
   heroContainer: { width, height: height * 0.65 },
   heroImage: { width: "100%", height: "100%" },
   heroGradient: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", paddingBottom: 20 },
@@ -925,8 +1117,8 @@ const styles = StyleSheet.create({
   playButtonText: { color: "#000", fontSize: 14, fontWeight: "700" },
   infoButton: { alignItems: "center" },
   infoText: { color: "#fff", fontSize: 10, marginTop: 4 },
-  franchiseSection: { marginTop: 16, marginBottom: 24 },
-  franchiseList: { paddingHorizontal: 16, gap: 16 },
+  franchiseSection: { marginBottom: 24 },
+  franchiseList: { paddingHorizontal: 16, gap: 12 },
   franchiseItem: { alignItems: "center" },
   franchiseCircle: { width: 70, height: 70, borderRadius: 35, overflow: "hidden", borderWidth: 2, borderColor: "#1a3a5c" },
   franchiseImage: { width: "100%", height: "100%" },
@@ -969,36 +1161,42 @@ const styles = StyleSheet.create({
   progressBar: { height: "100%", backgroundColor: "#37d1e4", borderRadius: 2 },
   continuePlayIcon: { position: "absolute", top: "50%", left: "50%", marginTop: -16, marginLeft: -16, width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: "#fff" },
 
-  // Top 10 styles - Netflix exact style with white numbers and bold outline
+  // Top 10 styles - Netflix style with outlined numbers
   top10Header: { flexDirection: "row", alignItems: "center", marginLeft: 16, marginBottom: 12 },
+  top10Title: { color: "#fff", fontSize: 16, fontWeight: "700" },
   top10Badge: { backgroundColor: "#e50914", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 2, marginLeft: 8 },
   top10BadgeText: { color: "#fff", fontSize: 10, fontWeight: "bold" },
   top10List: { paddingHorizontal: 16 },
-  top10Card: { flexDirection: "row", alignItems: "flex-end", marginRight: 4 },
-  top10NumberBg: { width: 50, height: 160, justifyContent: "flex-end", alignItems: "flex-end", marginRight: -22, zIndex: 1 },
+  top10Card: { flexDirection: "row", alignItems: "flex-end", marginRight: 8 },
+  top10NumberContainer: { justifyContent: "flex-end", alignItems: "center", marginRight: -18, zIndex: 1, minWidth: 40 },
+  top10NumberWrapper: { position: "relative", justifyContent: "center", alignItems: "center" },
+  top10NumberOutline: {
+    position: "absolute",
+    fontSize: 72,
+    fontWeight: "900",
+    fontStyle: "italic",
+    color: "#000",
+    includeFontPadding: false,
+  },
   top10Number: {
-    fontSize: 100,
+    fontSize: 72,
     fontWeight: "900",
     fontStyle: "italic",
     color: "#fff",
-    textShadowColor: "#000",
-    textShadowOffset: { width: 3, height: 3 },
-    textShadowRadius: 1,
     includeFontPadding: false,
-    lineHeight: 100,
   },
   top10Image: { width: 110, height: 160, borderRadius: 6, backgroundColor: "#0a1929" },
 
-  // Featured Section styles - Premium spotlight cards with transparent borders
+  // Featured Section styles - Premium spotlight cards with transparent blending sides
   featuredContainer: { marginBottom: 24 },
-  featuredHeader: { paddingHorizontal: 16, marginBottom: 16 },
+  featuredHeader: { paddingHorizontal: 16, marginBottom: 12 },
   featuredTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  featuredSectionTitle: { color: "#fff", fontSize: 20, fontWeight: "bold" },
-  featuredSubtitle: { color: "#888", fontSize: 12, marginTop: 4 },
-  featuredScroll: { paddingHorizontal: 16, gap: 12 },
-  featuredCard: { width: width * 0.88, height: 260, borderRadius: 8, overflow: "hidden", backgroundColor: "transparent", borderWidth: 0 },
-  featuredImage: { width: "100%", height: "100%" },
-  featuredGradient: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", padding: 16 },
+  featuredSectionTitle: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  featuredSubtitle: { color: "#888", fontSize: 12, marginTop: 2 },
+  featuredScroll: { paddingLeft: 16, paddingRight: 8 },
+  featuredCard: { width: width * 0.85, height: 240, borderRadius: 12, overflow: "visible", backgroundColor: "transparent", marginRight: 12 },
+  featuredImage: { width: "100%", height: "100%", borderRadius: 12 },
+  featuredGradient: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", padding: 16, borderRadius: 12 },
   featuredContent: { gap: 6 },
   featuredTopRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   featuredSpotlight: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,215,0,0.15)", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, gap: 4, borderWidth: 1, borderColor: "rgba(255,215,0,0.4)" },
@@ -1021,6 +1219,19 @@ const styles = StyleSheet.create({
   featuredMoreBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.08)", paddingVertical: 8, paddingHorizontal: 14, borderRadius: 4, gap: 4, borderWidth: 0 },
   featuredMoreText: { color: "#fff", fontSize: 12, fontWeight: "600" },
   featuredAddBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.05)", justifyContent: "center", alignItems: "center", borderWidth: 0 },
+
+  // Random Pick Section styles
+  randomPickContainer: { marginHorizontal: 16, marginBottom: 24, borderRadius: 16, overflow: "hidden" },
+  randomPickGradient: { borderRadius: 16, borderWidth: 1, borderColor: "rgba(55,209,228,0.2)" },
+  randomPickContent: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 20 },
+  randomPickTextContainer: { flex: 1, marginRight: 16 },
+  randomPickIconRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 },
+  randomPickTitle: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+  randomPickSubtitle: { color: "#888", fontSize: 13 },
+  surpriseMeButton: { flexDirection: "row", alignItems: "center", backgroundColor: "#37d1e4", paddingVertical: 12, paddingHorizontal: 20, borderRadius: 25, gap: 8 },
+  surpriseMeButtonDisabled: { opacity: 0.7 },
+  surpriseMeText: { color: "#000", fontSize: 14, fontWeight: "bold" },
+  surpriseMeLoading: { width: 20, height: 20 },
 
   // Stories styles - Episode Updates
   storiesContainer: { marginBottom: 24 },
@@ -1055,7 +1266,10 @@ const styles = StyleSheet.create({
   storyEpisodeNumber: { color: "#fff", fontSize: 12, fontWeight: "600", backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
   storyBottomTitle: { color: "#fff", fontSize: 22, fontWeight: "bold", marginBottom: 4 },
   storyEpisodeName: { color: "#aaa", fontSize: 14, fontStyle: "italic", marginBottom: 8 },
-  storyBottomOverview: { color: "#ccc", fontSize: 13, lineHeight: 18, marginBottom: 16 },
+  storyDescriptionContainer: { marginBottom: 16 },
+  storyBottomOverview: { color: "#ccc", fontSize: 13, lineHeight: 18 },
+  storySeeMoreBtn: { marginTop: 4 },
+  storySeeMoreText: { color: "#37d1e4", fontSize: 13, fontWeight: "600" },
   storyBottomButtons: { flexDirection: "row", alignItems: "center", gap: 12 },
   storyWatchBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingVertical: 12, paddingHorizontal: 24, borderRadius: 4, gap: 8 },
   storyWatchBtnText: { color: "#000", fontSize: 15, fontWeight: "700" },

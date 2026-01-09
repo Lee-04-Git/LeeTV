@@ -9,6 +9,7 @@ import {
   Image,
   ActivityIndicator,
   FlatList,
+  Dimensions,
 } from "react-native";
 import colors from "../constants/colors";
 import { BackIcon } from "../components/Icons";
@@ -26,7 +27,10 @@ import {
   fetchUSANetwork,
   fetchTheCW,
   fetchESPN,
+  fetchStructuredFranchiseContent,
 } from "../services/tmdbApi";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 const FranchiseScreen = ({ navigation, route }) => {
   const { franchise } = route.params || {};
@@ -35,6 +39,10 @@ const FranchiseScreen = ({ navigation, route }) => {
   const [loading, setLoading] = useState(true);
   const [selectedTab, setSelectedTab] = useState("All");
 
+  // Structured content state for row-based layout
+  const [structuredContent, setStructuredContent] = useState(null);
+  const [useStructuredLayout, setUseStructuredLayout] = useState(false);
+
   // Pagination state for lazy loading franchises
   const [currentPage, setCurrentPage] = useState(1);
   const [paginatedContent, setPaginatedContent] = useState([]);
@@ -42,30 +50,61 @@ const FranchiseScreen = ({ navigation, route }) => {
   const [hasMore, setHasMore] = useState(true);
   const [targetCount, setTargetCount] = useState(500);
 
-  // Check if franchise uses lazy loading
+  // Franchises that support structured row layout
+  const structuredFranchises = [
+    "Marvel",
+    "Star Wars",
+    "DC",
+    "Disney",
+    "Disney+",
+    "Netflix",
+    "Netflix Originals",
+    "HBO Max",
+    "Max",
+    "Anime",
+  ];
+
+  // Check if franchise uses structured layout
+  const supportsStructuredLayout = structuredFranchises.includes(franchise);
+
+  // Check if franchise uses lazy loading (for non-structured franchises)
   const usesLazyLoading =
-    franchise === "Anime" ||
-    franchise === "Netflix" ||
-    franchise === "Netflix Originals" ||
-    franchise === "Hulu" ||
-    franchise === "DC" ||
-    franchise === "Marvel" ||
-    franchise === "Star Wars" ||
-    franchise === "HBO Max" ||
-    franchise === "Max" ||
-    franchise === "Paramount+" ||
-    franchise === "Apple TV+" ||
-    franchise === "USA Network" ||
-    franchise === "The CW" ||
-    franchise === "ESPN";
+    !supportsStructuredLayout &&
+    (franchise === "Hulu" ||
+      franchise === "Paramount+" ||
+      franchise === "Apple TV+" ||
+      franchise === "USA Network" ||
+      franchise === "The CW" ||
+      franchise === "ESPN");
 
   useEffect(() => {
-    if (usesLazyLoading) {
+    if (supportsStructuredLayout) {
+      loadStructuredContent();
+    } else if (usesLazyLoading) {
       loadPaginatedContent(1, true);
     } else {
       loadFranchiseContent();
     }
   }, [franchise]);
+
+  const loadStructuredContent = async () => {
+    setLoading(true);
+    try {
+      const content = await fetchStructuredFranchiseContent(franchise);
+      if (content && content.sections && content.sections.length > 0) {
+        setStructuredContent(content);
+        setUseStructuredLayout(true);
+      } else {
+        // Fallback to paginated loading if structured content fails
+        loadPaginatedContent(1, true);
+      }
+    } catch (error) {
+      console.error("Error loading structured content:", error);
+      loadPaginatedContent(1, true);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadPaginatedContent = async (page, isInitial = false) => {
     if (isInitial) {
@@ -73,29 +112,20 @@ const FranchiseScreen = ({ navigation, route }) => {
       setPaginatedContent([]);
       setCurrentPage(1);
       setHasMore(true);
+      setUseStructuredLayout(false);
       // Set target count based on franchise
-      if (franchise === "Netflix" || franchise === "Netflix Originals") {
-        setTargetCount(300);
-      } else if (franchise === "Hulu") {
+      if (franchise === "Hulu") {
         setTargetCount(200);
-      } else if (franchise === "DC") {
-        setTargetCount(112); // All available DC content (~76 movies + 36 TV)
-      } else if (franchise === "Marvel") {
-        setTargetCount(170); // All available Marvel content (~124 movies + 46 TV)
-      } else if (franchise === "Star Wars") {
-        setTargetCount(295); // All available Star Wars content (~233 movies + 62 TV)
-      } else if (franchise === "HBO Max" || franchise === "Max") {
-        setTargetCount(200); // HBO Max content
       } else if (franchise === "Paramount+") {
-        setTargetCount(150); // Paramount+ content (~135 available)
+        setTargetCount(150);
       } else if (franchise === "Apple TV+") {
-        setTargetCount(233); // Apple TV+ content (~233 available)
+        setTargetCount(233);
       } else if (franchise === "USA Network") {
-        setTargetCount(166); // USA Network content (~166 available)
+        setTargetCount(166);
       } else if (franchise === "The CW") {
-        setTargetCount(182); // The CW content (~182 available)
+        setTargetCount(182);
       } else if (franchise === "ESPN") {
-        setTargetCount(102); // ESPN content (~102 available)
+        setTargetCount(102);
       } else {
         setTargetCount(500);
       }
@@ -105,20 +135,8 @@ const FranchiseScreen = ({ navigation, route }) => {
 
     try {
       let data;
-      if (franchise === "Anime") {
-        data = await fetchAnime(page);
-      } else if (franchise === "Netflix" || franchise === "Netflix Originals") {
-        data = await fetchNetflix(page);
-      } else if (franchise === "Hulu") {
+      if (franchise === "Hulu") {
         data = await fetchHulu(page);
-      } else if (franchise === "DC") {
-        data = await fetchDC(page);
-      } else if (franchise === "Marvel") {
-        data = await fetchMarvel(page);
-      } else if (franchise === "Star Wars") {
-        data = await fetchStarWars(page);
-      } else if (franchise === "HBO Max" || franchise === "Max") {
-        data = await fetchHBOMax(page);
       } else if (franchise === "Paramount+") {
         data = await fetchParamountPlus(page);
       } else if (franchise === "Apple TV+") {
@@ -131,44 +149,36 @@ const FranchiseScreen = ({ navigation, route }) => {
         data = await fetchESPN(page);
       }
 
-      if (isInitial) {
-        setPaginatedContent(data.results);
-      } else {
-        setPaginatedContent((prev) => {
-          const existingIds = new Set(prev.map((item) => item.id));
-          const newItems = data.results.filter(
-            (item) => !existingIds.has(item.id)
-          );
-          return [...prev, ...newItems];
-        });
-      }
+      if (data) {
+        if (isInitial) {
+          setPaginatedContent(data.results);
+        } else {
+          setPaginatedContent((prev) => {
+            const existingIds = new Set(prev.map((item) => item.id));
+            const newItems = data.results.filter(
+              (item) => !existingIds.has(item.id)
+            );
+            return [...prev, ...newItems];
+          });
+        }
 
-      let maxCount = 500;
-      if (franchise === "Netflix" || franchise === "Netflix Originals") {
-        maxCount = 300;
-      } else if (franchise === "Hulu") {
-        maxCount = 200;
-      } else if (franchise === "DC") {
-        maxCount = 112;
-      } else if (franchise === "HBO Max" || franchise === "Max") {
-        maxCount = 200;
-      } else if (franchise === "Paramount+") {
-        maxCount = 150;
-      } else if (franchise === "Apple TV+") {
-        maxCount = 233;
-      } else if (franchise === "USA Network") {
-        maxCount = 166;
-      } else if (franchise === "The CW") {
-        maxCount = 182;
-      } else if (franchise === "ESPN") {
-        maxCount = 102;
-      } else if (franchise === "Marvel") {
-        maxCount = 170;
-      } else if (franchise === "Star Wars") {
-        maxCount = 295;
+        let maxCount = 500;
+        if (franchise === "Hulu") {
+          maxCount = 200;
+        } else if (franchise === "Paramount+") {
+          maxCount = 150;
+        } else if (franchise === "Apple TV+") {
+          maxCount = 233;
+        } else if (franchise === "USA Network") {
+          maxCount = 166;
+        } else if (franchise === "The CW") {
+          maxCount = 182;
+        } else if (franchise === "ESPN") {
+          maxCount = 102;
+        }
+        setHasMore(page < data.totalPages && paginatedContent.length < maxCount);
+        setCurrentPage(page);
       }
-      setHasMore(page < data.totalPages && paginatedContent.length < maxCount);
-      setCurrentPage(page);
     } catch (error) {
       console.error(`Error loading ${franchise} content:`, error);
     } finally {
@@ -191,12 +201,15 @@ const FranchiseScreen = ({ navigation, route }) => {
   };
 
   const handleLoadMore = useCallback(() => {
-    if (usesLazyLoading && !loadingMore && hasMore) {
+    if (usesLazyLoading && !loadingMore && hasMore && !useStructuredLayout) {
       loadPaginatedContent(currentPage + 1, false);
     }
-  }, [usesLazyLoading, loadingMore, hasMore, currentPage]);
+  }, [usesLazyLoading, loadingMore, hasMore, currentPage, useStructuredLayout]);
 
   const getDisplayContent = () => {
+    if (useStructuredLayout) {
+      return []; // Structured layout uses sections, not flat list
+    }
     if (usesLazyLoading) {
       return paginatedContent;
     }
@@ -233,6 +246,38 @@ const FranchiseScreen = ({ navigation, route }) => {
     </TouchableOpacity>
   );
 
+  // Row item for structured layout
+  const renderRowItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.rowCard}
+      onPress={() => handleContentPress(item)}
+    >
+      <Image
+        source={{ uri: item.image }}
+        style={styles.rowPoster}
+        resizeMode="cover"
+      />
+      <Text style={styles.rowCardTitle} numberOfLines={2}>
+        {item.title}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  // Section component for structured layout
+  const renderSection = (section) => (
+    <View key={section.id} style={styles.sectionContainer}>
+      <Text style={styles.sectionTitle}>{section.title}</Text>
+      <FlatList
+        data={section.data}
+        renderItem={renderRowItem}
+        keyExtractor={(item) => `${section.id}-${item.type}-${item.id}`}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.rowContent}
+      />
+    </View>
+  );
+
   const renderFooter = () => {
     if (!loadingMore) return null;
     return (
@@ -253,13 +298,13 @@ const FranchiseScreen = ({ navigation, route }) => {
           <BackIcon size={24} color={colors.white} />
         </TouchableOpacity>
         <Text style={styles.title}>{franchise || "Franchise"}</Text>
-        {usesLazyLoading && (
+        {usesLazyLoading && !useStructuredLayout && (
           <Text style={styles.countText}>{paginatedContent.length} titles</Text>
         )}
       </View>
 
-      {/* Tab Selector - hide for lazy loading franchises since they're all TV */}
-      {!usesLazyLoading && (
+      {/* Tab Selector - hide for lazy loading and structured franchises */}
+      {!usesLazyLoading && !useStructuredLayout && (
         <View style={styles.tabContainer}>
           {["All", "Movies", "TV Shows"].map((tab) => (
             <TouchableOpacity
@@ -285,7 +330,17 @@ const FranchiseScreen = ({ navigation, route }) => {
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading {franchise} content...</Text>
         </View>
+      ) : useStructuredLayout && structuredContent ? (
+        // Structured row-based layout
+        <ScrollView
+          style={styles.scrollView}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.structuredContent}
+        >
+          {structuredContent.sections.map(renderSection)}
+        </ScrollView>
       ) : (
+        // Grid layout for non-structured franchises
         <FlatList
           data={getDisplayContent()}
           renderItem={renderItem}
@@ -380,6 +435,7 @@ const styles = StyleSheet.create({
     marginTop: 15,
     fontSize: 16,
   },
+  // Grid layout styles
   flatListContent: {
     paddingHorizontal: 15,
     paddingVertical: 10,
@@ -442,6 +498,44 @@ const styles = StyleSheet.create({
   loadingMoreText: {
     color: "rgba(255, 255, 255, 0.6)",
     fontSize: 14,
+  },
+  // Structured row layout styles
+  scrollView: {
+    flex: 1,
+  },
+  structuredContent: {
+    paddingBottom: 20,
+  },
+  sectionContainer: {
+    marginTop: 20,
+  },
+  sectionTitle: {
+    color: colors.white,
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 12,
+    paddingHorizontal: 16,
+  },
+  rowContent: {
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  rowCard: {
+    width: 120,
+    marginRight: 10,
+  },
+  rowPoster: {
+    width: 120,
+    height: 180,
+    borderRadius: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  },
+  rowCardTitle: {
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 6,
+    textAlign: "center",
   },
 });
 
