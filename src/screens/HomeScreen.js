@@ -17,6 +17,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import {
   fetchTrending,
+  fetchTrendingTVShows,
+  fetchTrendingMovies,
   fetchPopularMovies,
   fetchPopularTVShows,
   fetchTopRatedMovies,
@@ -81,6 +83,8 @@ const FRANCHISE_ICONS = [
   { name: "USA Network", img: require("../../assets/usa-network-icon-logo.jpg"), scale: 1 },
   { name: "The CW", img: require("../../assets/cw-network-logo.png"), scale: 1.25 },
   { name: "ESPN", img: require("../../assets/espn-logo-icon.png"), scale: 1 },
+  { name: "Harry Potter", textIcon: "HP", bgColor: "#1a1a2e", scale: 1 },
+  { name: "Transformers", textIcon: "TF", bgColor: "#1a1a2e", scale: 1 },
 ];
 
 const MovieItem = memo(({ item, onPress }) => (
@@ -89,7 +93,7 @@ const MovieItem = memo(({ item, onPress }) => (
   </TouchableOpacity>
 ));
 
-const HorizontalList = memo(({ title, data, loading, onShowPress }) => {
+const HorizontalList = memo(({ title, data, loading, onShowPress, navigation, categoryId, categoryType }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -101,9 +105,27 @@ const HorizontalList = memo(({ title, data, loading, onShowPress }) => {
   if (loading) return <SkeletonRow />;
   if (!data || data.length === 0) return null;
 
+  const handleSeeAll = () => {
+    if (navigation && categoryId) {
+      navigation.navigate("CategoryContent", { 
+        title, 
+        categoryId, 
+        categoryType: categoryType || 'mixed'
+      });
+    }
+  };
+
   return (
     <Animated.View style={[styles.section, { opacity: fadeAnim }]}>
-      {title ? <Text style={styles.sectionTitle}>{title}</Text> : null}
+      <View style={styles.sectionHeader}>
+        {title ? <Text style={styles.sectionTitle}>{title}</Text> : null}
+        {navigation && categoryId && (
+          <TouchableOpacity style={styles.seeAllBtn} onPress={handleSeeAll}>
+            <Text style={styles.seeAllText}>See All</Text>
+            <Ionicons name="chevron-forward" size={16} color="#37d1e4" />
+          </TouchableOpacity>
+        )}
+      </View>
       <FlatList
         data={data}
         renderItem={({ item }) => <MovieItem item={item} onPress={onShowPress} />}
@@ -127,15 +149,19 @@ const FranchiseRow = memo(({ navigation }) => (
           onPress={() => navigation.navigate("Franchise", { franchise: item.name })}
           activeOpacity={0.8}
         >
-          <View style={styles.franchiseCircle}>
-            <Image
-              source={item.img}
-              style={[
-                styles.franchiseImage,
-                { transform: [{ scale: item.scale || 1 }] }
-              ]}
-              resizeMode="cover"
-            />
+          <View style={[styles.franchiseCircle, item.bgColor && { backgroundColor: item.bgColor }]}>
+            {item.img ? (
+              <Image
+                source={item.img}
+                style={[
+                  styles.franchiseImage,
+                  { transform: [{ scale: item.scale || 1 }] }
+                ]}
+                resizeMode="cover"
+              />
+            ) : (
+              <Text style={styles.franchiseTextIcon}>{item.textIcon}</Text>
+            )}
           </View>
         </TouchableOpacity>
       ))}
@@ -176,6 +202,219 @@ const ContinueWatchingRow = memo(({ data, navigation, loading }) => {
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.showList}
       />
+    </View>
+  );
+});
+
+// Trending Carousel Item with List functionality
+const TrendingCarouselItem = memo(({ item, index, scrollX, CARD_WIDTH, CARD_HEIGHT, navigation }) => {
+  const [inList, setInList] = useState(false);
+
+  useEffect(() => {
+    checkListStatus();
+  }, [item.id]);
+
+  const checkListStatus = async () => {
+    try {
+      const status = await isInList(item.id, item.type);
+      setInList(status);
+    } catch (error) {
+      console.error("Error checking list status:", error);
+    }
+  };
+
+  const handleListToggle = async () => {
+    try {
+      if (inList) {
+        await removeFromList(item.id, item.type);
+        setInList(false);
+      } else {
+        await addToList({ ...item, media_type: item.type });
+        setInList(true);
+      }
+    } catch (error) {
+      console.error("Error toggling list:", error);
+    }
+  };
+
+  const handlePress = () => {
+    navigation.navigate("ShowDetails", {
+      show: item,
+      id: item.id,
+      type: item.type,
+      title: item.title,
+    });
+  };
+
+  const handlePlay = () => {
+    if (item.type === "movie") {
+      navigation.navigate("VideoPlayer", {
+        title: item.title,
+        mediaId: item.id,
+        mediaType: "movie",
+      });
+    } else {
+      navigation.navigate("VideoPlayer", {
+        title: item.title,
+        mediaId: item.id,
+        mediaType: "tv",
+        season: 1,
+        episode: 1,
+      });
+    }
+  };
+
+  const inputRange = [
+    (index - 1) * CARD_WIDTH,
+    index * CARD_WIDTH,
+    (index + 1) * CARD_WIDTH,
+  ];
+  
+  const imageScale = scrollX.interpolate({
+    inputRange,
+    outputRange: [1.1, 1, 1.1],
+    extrapolate: 'clamp',
+  });
+  
+  const contentOpacity = scrollX.interpolate({
+    inputRange,
+    outputRange: [0, 1, 0],
+    extrapolate: 'clamp',
+  });
+  
+  const contentTranslateY = scrollX.interpolate({
+    inputRange,
+    outputRange: [30, 0, 30],
+    extrapolate: 'clamp',
+  });
+
+  return (
+    <TouchableOpacity 
+      style={[styles.trendingCard, { width: CARD_WIDTH, height: CARD_HEIGHT }]}
+      activeOpacity={0.95}
+      onPress={handlePress}
+    >
+      <Animated.Image 
+        source={{ uri: item.backdrop || item.image }} 
+        style={[styles.trendingImage, { transform: [{ scale: imageScale }] }]} 
+        resizeMode="cover" 
+      />
+      {/* Vignette effect */}
+      <LinearGradient
+        colors={['rgba(1,14,31,0.3)', 'transparent', 'transparent', 'rgba(1,14,31,0.4)']}
+        locations={[0, 0.2, 0.6, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={StyleSheet.absoluteFillObject}
+        pointerEvents="none"
+      />
+      {/* Bottom gradient */}
+      <LinearGradient
+        colors={['transparent', 'rgba(1,14,31,0.6)', '#010e1f']}
+        locations={[0.3, 0.7, 1]}
+        style={styles.trendingGradientOverlay}
+        pointerEvents="none"
+      />
+      {/* Content */}
+      <Animated.View style={[styles.trendingContent, { opacity: contentOpacity, transform: [{ translateY: contentTranslateY }] }]}>
+        <View style={styles.trendingTitleArea}>
+          <Text style={styles.trendingTitleText}>{item.title}</Text>
+          <View style={styles.trendingMetaRow}>
+            <View style={styles.trendingRatingBadge}>
+              <Ionicons name="star" size={12} color="#FFD700" />
+              <Text style={styles.trendingRatingValue}>{item.rating}</Text>
+            </View>
+            <Text style={styles.trendingMetaDivider}>|</Text>
+            <Text style={styles.trendingYear}>{item.year}</Text>
+            <Text style={styles.trendingMetaDivider}>|</Text>
+            <Text style={styles.trendingType}>{item.type === 'tv' ? 'Series' : 'Film'}</Text>
+          </View>
+        </View>
+        <Text style={styles.trendingDescription} numberOfLines={2}>{item.overview}</Text>
+        <View style={styles.trendingButtonRow}>
+          <TouchableOpacity style={styles.trendingPlayButton} onPress={handlePlay} activeOpacity={0.9}>
+            <Ionicons name="play" size={22} color="#000" />
+            <Text style={styles.trendingPlayText}>Play</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.trendingAddButton, inList && styles.trendingAddButtonActive]} 
+            onPress={handleListToggle}
+            activeOpacity={0.8}
+          >
+            <Ionicons name={inList ? "checkmark" : "add"} size={26} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.trendingInfoButton} onPress={handlePress} activeOpacity={0.8}>
+            <Ionicons name="information-circle-outline" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+});
+
+// Trending Carousel - Disney+ Hero Style
+const TrendingCarousel = memo(({ data, navigation, loading, title = "Trending This Week" }) => {
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const flatListRef = useRef(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  
+  if (loading) return <SkeletonRow />;
+  if (!data || data.length === 0) return null;
+
+  const CARD_WIDTH = width;
+  const CARD_HEIGHT = height * 0.65; // Same height as homepage hero
+
+  const handleScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+    { 
+      useNativeDriver: false,
+      listener: (event) => {
+        const index = Math.round(event.nativeEvent.contentOffset.x / CARD_WIDTH);
+        setActiveIndex(index);
+      }
+    }
+  );
+
+  const renderCarouselItem = ({ item, index }) => (
+    <TrendingCarouselItem
+      item={item}
+      index={index}
+      scrollX={scrollX}
+      CARD_WIDTH={CARD_WIDTH}
+      CARD_HEIGHT={CARD_HEIGHT}
+      navigation={navigation}
+    />
+  );
+
+  return (
+    <View style={styles.trendingContainer}>
+      <Animated.FlatList
+        ref={flatListRef}
+        data={data}
+        renderItem={renderCarouselItem}
+        keyExtractor={(item) => `trending-${item.id}`}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        bounces={false}
+      />
+      {/* Pill indicators */}
+      <View style={styles.trendingPillContainer}>
+        {data.map((_, index) => (
+          <TouchableOpacity 
+            key={`pill-${index}`} 
+            onPress={() => flatListRef.current?.scrollToIndex({ index, animated: true })}
+            activeOpacity={0.7}
+          >
+            <View style={[
+              styles.trendingPill,
+              activeIndex === index && styles.trendingPillActive
+            ]} />
+          </TouchableOpacity>
+        ))}
+      </View>
     </View>
   );
 });
@@ -708,7 +947,7 @@ const FeaturedHero = memo(({ item, navigation }) => {
   );
 });
 
-const TabContent = memo(({ tabId, sections, featuredItem, navigation, myListData, myListLoading, continueWatchingData, continueWatchingLoading, top10Data, top10Loading, splitHeroData, storiesData, onStoryPress, onSurpriseMe, surpriseMeLoading }) => {
+const TabContent = memo(({ tabId, sections, featuredItem, navigation, myListData, myListLoading, continueWatchingData, continueWatchingLoading, top10Data, top10Loading, splitHeroData, storiesData, onStoryPress, onSurpriseMe, surpriseMeLoading, trendingTVData, trendingTVLoading, trendingMoviesData, trendingMoviesLoading }) => {
   if (tabId === "My List") {
     return (
       <ScrollView style={styles.myListContainer} showsVerticalScrollIndicator={false}>
@@ -760,6 +999,9 @@ const TabContent = memo(({ tabId, sections, featuredItem, navigation, myListData
           data={item.data}
           loading={item.loading}
           onShowPress={(show) => navigation.navigate("ShowDetails", { show })}
+          navigation={navigation}
+          categoryId={item.id}
+          categoryType={tabId === "Movies" ? "movie" : tabId === "TV Shows" ? "tv" : "mixed"}
         />
       )}
       keyExtractor={(item, index) => `${tabId}-${item.id}-${index}`}
@@ -776,13 +1018,26 @@ const TabContent = memo(({ tabId, sections, featuredItem, navigation, myListData
               <RandomPickSection navigation={navigation} onSurpriseMe={onSurpriseMe} isLoading={surpriseMeLoading} />
             </>
           )}
+          {tabId === "TV Shows" && (
+            <TrendingCarousel 
+              data={trendingTVData} 
+              navigation={navigation} 
+              loading={trendingTVLoading}
+              title="Trending TV Shows This Week"
+            />
+          )}
+          {tabId === "Movies" && (
+            <TrendingCarousel 
+              data={trendingMoviesData} 
+              navigation={navigation} 
+              loading={trendingMoviesLoading}
+              title="Trending Movies This Week"
+            />
+          )}
           {tabId !== "Home" && tabId !== "TV Shows" && tabId !== "Movies" && (
             <View style={styles.tabHeader}>
               <Text style={styles.tabHeaderTitle}>{tabId}</Text>
             </View>
-          )}
-          {(tabId === "TV Shows" || tabId === "Movies") && (
-            <View style={styles.tabHeaderSpacer} />
           )}
         </View>
       )}
@@ -854,6 +1109,12 @@ const HomeScreen = ({ navigation }) => {
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [storyInitialIndex, setStoryInitialIndex] = useState(0);
   const [surpriseMeLoading, setSurpriseMeLoading] = useState(false);
+  
+  // Trending carousel data
+  const [trendingTVData, setTrendingTVData] = useState([]);
+  const [trendingTVLoading, setTrendingTVLoading] = useState(true);
+  const [trendingMoviesData, setTrendingMoviesData] = useState([]);
+  const [trendingMoviesLoading, setTrendingMoviesLoading] = useState(true);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const indicatorAnim = useRef(new Animated.Value(0)).current;
@@ -864,6 +1125,7 @@ const HomeScreen = ({ navigation }) => {
     loadFeaturedItem();
     loadContinueWatching();
     loadTop10AndSplitHero();
+    loadTrendingCarousels();
     loadStories();
   }, []);
 
@@ -918,6 +1180,24 @@ const HomeScreen = ({ navigation }) => {
     } catch (e) {
       console.error("Error loading top 10 or split hero:", e);
       setTop10Loading(false);
+    }
+  };
+
+  const loadTrendingCarousels = async () => {
+    setTrendingTVLoading(true);
+    setTrendingMoviesLoading(true);
+    try {
+      const [tvData, moviesData] = await Promise.all([
+        fetchTrendingTVShows("week", 6),
+        fetchTrendingMovies("week", 6),
+      ]);
+      setTrendingTVData(tvData);
+      setTrendingMoviesData(moviesData);
+    } catch (e) {
+      console.error("Error loading trending carousels:", e);
+    } finally {
+      setTrendingTVLoading(false);
+      setTrendingMoviesLoading(false);
     }
   };
 
@@ -1071,6 +1351,10 @@ const HomeScreen = ({ navigation }) => {
                 onStoryPress={handleStoryPress}
                 onSurpriseMe={handleSurpriseMe}
                 surpriseMeLoading={surpriseMeLoading}
+                trendingTVData={trendingTVData}
+                trendingTVLoading={trendingTVLoading}
+                trendingMoviesData={trendingMoviesData}
+                trendingMoviesLoading={trendingMoviesLoading}
               />
             </View>
           ))}
@@ -1122,8 +1406,12 @@ const styles = StyleSheet.create({
   franchiseItem: { alignItems: "center" },
   franchiseCircle: { width: 70, height: 70, borderRadius: 35, overflow: "hidden", borderWidth: 2, borderColor: "#1a3a5c" },
   franchiseImage: { width: "100%", height: "100%" },
+  franchiseTextIcon: { color: "#fff", fontSize: 24, fontWeight: "bold", textAlign: "center" },
   section: { marginBottom: 24 },
-  sectionTitle: { color: "#fff", fontSize: 16, fontWeight: "700", marginLeft: 16, marginBottom: 12 },
+  sectionHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingRight: 16, marginBottom: 12 },
+  sectionTitle: { color: "#fff", fontSize: 16, fontWeight: "700", marginLeft: 16 },
+  seeAllBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  seeAllText: { color: "#37d1e4", fontSize: 13, fontWeight: "600" },
   showList: { paddingHorizontal: 16, gap: 8 },
   showCard: { width: 110, height: 160, borderRadius: 4, overflow: "hidden", backgroundColor: "#0a1929" },
   showImage: { width: "100%", height: "100%" },
@@ -1160,6 +1448,31 @@ const styles = StyleSheet.create({
   progressBarContainer: { height: 3, backgroundColor: "rgba(255,255,255,0.3)", borderRadius: 2 },
   progressBar: { height: "100%", backgroundColor: "#37d1e4", borderRadius: 2 },
   continuePlayIcon: { position: "absolute", top: "50%", left: "50%", marginTop: -16, marginLeft: -16, width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: "#fff" },
+
+  // Trending Carousel styles - Disney+ Hero Style (full-bleed like homepage)
+  trendingContainer: { },
+  trendingCard: { overflow: "hidden" },
+  trendingImage: { width: "100%", height: "100%" },
+  trendingGradientOverlay: { position: "absolute", bottom: 0, left: 0, right: 0, height: "70%" },
+  trendingContent: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 24, paddingBottom: 24 },
+  trendingTitleArea: { marginBottom: 12 },
+  trendingTitleText: { color: "#fff", fontSize: 32, fontWeight: "800", letterSpacing: -0.5, textShadowColor: "rgba(0,0,0,0.5)", textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 4 },
+  trendingMetaRow: { flexDirection: "row", alignItems: "center", marginTop: 8, gap: 10 },
+  trendingRatingBadge: { flexDirection: "row", alignItems: "center", gap: 4 },
+  trendingRatingValue: { color: "#FFD700", fontSize: 14, fontWeight: "700" },
+  trendingMetaDivider: { color: "rgba(255,255,255,0.3)", fontSize: 14 },
+  trendingYear: { color: "rgba(255,255,255,0.8)", fontSize: 14, fontWeight: "500" },
+  trendingType: { color: "rgba(255,255,255,0.8)", fontSize: 14, fontWeight: "500" },
+  trendingDescription: { color: "rgba(255,255,255,0.7)", fontSize: 14, lineHeight: 20, marginBottom: 20 },
+  trendingButtonRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  trendingPlayButton: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingVertical: 14, paddingHorizontal: 32, borderRadius: 8, gap: 8 },
+  trendingPlayText: { color: "#000", fontSize: 17, fontWeight: "700" },
+  trendingAddButton: { width: 50, height: 50, borderRadius: 25, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: "rgba(255,255,255,0.3)" },
+  trendingAddButtonActive: { backgroundColor: "rgba(55,209,228,0.3)", borderColor: "#37d1e4" },
+  trendingInfoButton: { width: 50, height: 50, borderRadius: 25, backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: "rgba(255,255,255,0.3)" },
+  trendingPillContainer: { flexDirection: "row", justifyContent: "center", alignItems: "center", paddingVertical: 16, gap: 8 },
+  trendingPill: { width: 24, height: 4, borderRadius: 2, backgroundColor: "rgba(255,255,255,0.3)" },
+  trendingPillActive: { width: 32, backgroundColor: "#fff" },
 
   // Top 10 styles - Netflix style with outlined numbers
   top10Header: { flexDirection: "row", alignItems: "center", marginLeft: 16, marginBottom: 12 },

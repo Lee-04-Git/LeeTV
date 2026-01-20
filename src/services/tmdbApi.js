@@ -61,6 +61,60 @@ export const fetchTrending = async (timeWindow = "week") => {
   }
 };
 
+// Fetch trending TV shows specifically
+export const fetchTrendingTVShows = async (timeWindow = "week", limit = 6) => {
+  try {
+    const response = await fetch(
+      `${BASE_URL}/trending/tv/${timeWindow}?api_key=${API_KEY}`
+    );
+    const data = await response.json();
+    // Filter out Stranger Things (ID: 66732) and take limit
+    const filtered = data.results.filter(show => show.id !== 66732);
+    return filtered.slice(0, limit).map((show) => ({
+      id: show.id,
+      title: show.name,
+      image: getImageUrl(show.poster_path, "w342"),
+      backdrop: getBackdropUrl(show.backdrop_path, "original"),
+      rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+      year: show.first_air_date
+        ? new Date(show.first_air_date).getFullYear()
+        : "N/A",
+      type: "tv",
+      overview: show.overview,
+      genre_ids: show.genre_ids || [],
+    }));
+  } catch (error) {
+    console.error("Error fetching trending TV shows:", error);
+    return [];
+  }
+};
+
+// Fetch trending movies specifically
+export const fetchTrendingMovies = async (timeWindow = "week", limit = 6) => {
+  try {
+    const response = await fetch(
+      `${BASE_URL}/trending/movie/${timeWindow}?api_key=${API_KEY}`
+    );
+    const data = await response.json();
+    return data.results.slice(0, limit).map((movie) => ({
+      id: movie.id,
+      title: movie.title,
+      image: getImageUrl(movie.poster_path, "w342"),
+      backdrop: getBackdropUrl(movie.backdrop_path, "original"),
+      rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+      year: movie.release_date
+        ? new Date(movie.release_date).getFullYear()
+        : "N/A",
+      type: "movie",
+      overview: movie.overview,
+      genre_ids: movie.genre_ids || [],
+    }));
+  } catch (error) {
+    console.error("Error fetching trending movies:", error);
+    return [];
+  }
+};
+
 // Fetch popular movies
 export const fetchPopularMovies = async (page = 1) => {
   try {
@@ -936,13 +990,21 @@ export const fetchMarvel = async (page = 1) => {
     // Fetch TV shows - with validation to block non-MCU content
     const tvPromises = mcuTVShowIds.map(async (showId) => {
       try {
-        const response = await fetch(`${BASE_URL}/tv/${showId}?api_key=${API_KEY}`);
+        // Fetch show details with credits to check cast
+        const response = await fetch(`${BASE_URL}/tv/${showId}?api_key=${API_KEY}&append_to_response=credits`);
         const data = await response.json();
         if (!data.id) return null;
         
         const title = (data.name || '').toLowerCase();
         const overview = (data.overview || '').toLowerCase();
         const originCountry = data.origin_country || [];
+        
+        // Block content with Colin Farrell
+        const castNames = data.credits?.cast?.map(c => c.name.toLowerCase()) || [];
+        const hasColinFarrell = castNames.some(name => 
+          name.includes('colin farrell') || name.includes('colin farrel')
+        );
+        if (hasColinFarrell) return null;
         
         // Block cooking shows
         const cookingKeywords = ['cooking', 'chef', 'kitchen', 'recipe', 'food', 'bake', 'baking', 'culinary', 'restaurant'];
@@ -1477,6 +1539,16 @@ export const fetchFranchiseContent = async (franchise) => {
         movies: { with_companies: 4 }, // Paramount Pictures
         tv: { with_networks: 4330 }, // Paramount+ network
       },
+      "Harry Potter": {
+        movies: { with_companies: 174 }, // Warner Bros
+        tv: { with_companies: 174 },
+        collectionId: 1241, // Harry Potter Collection
+      },
+      "Transformers": {
+        movies: { with_keywords: 310 }, // Transformers keyword
+        tv: { with_keywords: 310 },
+        collectionId: 8650, // Transformers Collection
+      },
     };
 
     const config = franchiseConfig[franchise];
@@ -1618,6 +1690,58 @@ export const fetchFranchiseContent = async (franchise) => {
         533535,  // Deadpool & Wolverine (2024)
       ];
 
+      // Sony Spider-Man Universe (SSU) Movie IDs - Venom, Morbius, etc.
+      const sonySSUMovieIds = [
+        335983,  // Venom (2018)
+        580489,  // Venom: Let There Be Carnage (2021)
+        526896,  // Morbius (2022)
+        634492,  // Madame Web (2024)
+        912649,  // Venom: The Last Dance (2024)
+        539972,  // Kraven the Hunter (2024)
+      ];
+
+      // Sam Raimi Spider-Man Trilogy (Tobey Maguire)
+      const raimiSpiderManIds = [
+        557,     // Spider-Man (2002)
+        558,     // Spider-Man 2 (2004)
+        559,     // Spider-Man 3 (2007)
+      ];
+
+      // Amazing Spider-Man (Andrew Garfield)
+      const amazingSpiderManIds = [
+        1930,    // The Amazing Spider-Man (2012)
+        102382,  // The Amazing Spider-Man 2 (2014)
+      ];
+
+      // Blade Trilogy (Wesley Snipes)
+      const bladeTrilogyIds = [
+        36647,   // Blade (1998)
+        36586,   // Blade II (2002)
+        36585,   // Blade: Trinity (2004)
+      ];
+
+      // Fantastic Four (Fox) Movie IDs
+      const fantasticFourFoxIds = [
+        9738,    // Fantastic Four (2005)
+        1979,    // Fantastic Four: Rise of the Silver Surfer (2007)
+        166424,  // Fantastic Four (2015)
+      ];
+
+      // Marvel Netflix/Television TV Show IDs (Pre-Disney+)
+      const marvelNetflixTVIds = [
+        61889,   // Daredevil (2015-2018)
+        38472,   // Jessica Jones (2015-2019)
+        62126,   // Luke Cage (2016-2018)
+        62127,   // Iron Fist (2017-2018) - Note: same ID as Guardians animated, will be filtered
+        62285,   // The Defenders (2017)
+        67178,   // The Punisher (2017-2019)
+        1403,    // Agents of S.H.I.E.L.D. (2013-2020)
+        61550,   // Agent Carter (2015-2016)
+        67466,   // Inhumans (2017)
+        67026,   // Runaways (2017-2019)
+        66190,   // Cloak & Dagger (2018-2019)
+      ];
+
       // Fetch all MCU movies
       const moviePromises = mcuMovieIds.map(async (movieId) => {
         try {
@@ -1634,8 +1758,9 @@ export const fetchFranchiseContent = async (franchise) => {
       // Fetch all MCU TV shows - with validation to block non-MCU content
       const tvPromises = mcuTVShowIds.map(async (showId) => {
         try {
+          // Fetch show details with credits to check cast
           const response = await fetch(
-            `${BASE_URL}/tv/${showId}?api_key=${API_KEY}`
+            `${BASE_URL}/tv/${showId}?api_key=${API_KEY}&append_to_response=credits`
           );
           const data = await response.json();
           if (!data.id) return null;
@@ -1643,7 +1768,13 @@ export const fetchFranchiseContent = async (franchise) => {
           const title = (data.name || '').toLowerCase();
           const overview = (data.overview || '').toLowerCase();
           const originCountry = data.origin_country || [];
-          const genres = data.genres?.map(g => g.name.toLowerCase()) || [];
+          
+          // Block content with Colin Farrell
+          const castNames = data.credits?.cast?.map(c => c.name.toLowerCase()) || [];
+          const hasColinFarrell = castNames.some(name => 
+            name.includes('colin farrell') || name.includes('colin farrel')
+          );
+          if (hasColinFarrell) return null;
           
           // Block cooking shows
           const cookingKeywords = ['cooking', 'chef', 'kitchen', 'recipe', 'food', 'bake', 'baking', 'culinary', 'restaurant'];
@@ -1767,12 +1898,105 @@ export const fetchFranchiseContent = async (franchise) => {
         }
       });
 
-      const [moviesData, tvShowsData, animationData, animatedMoviesData, xmenData] = await Promise.all([
+      // Fetch Sony SSU movies
+      const sonySSUPromises = sonySSUMovieIds.map(async (movieId) => {
+        try {
+          const response = await fetch(
+            `${BASE_URL}/movie/${movieId}?api_key=${API_KEY}`
+          );
+          const data = await response.json();
+          return data.id ? { ...data, category: 'sony_ssu' } : null;
+        } catch (error) {
+          return null;
+        }
+      });
+
+      // Fetch Sam Raimi Spider-Man movies
+      const raimiPromises = raimiSpiderManIds.map(async (movieId) => {
+        try {
+          const response = await fetch(
+            `${BASE_URL}/movie/${movieId}?api_key=${API_KEY}`
+          );
+          const data = await response.json();
+          return data.id ? { ...data, category: 'raimi_spiderman' } : null;
+        } catch (error) {
+          return null;
+        }
+      });
+
+      // Fetch Amazing Spider-Man movies
+      const amazingPromises = amazingSpiderManIds.map(async (movieId) => {
+        try {
+          const response = await fetch(
+            `${BASE_URL}/movie/${movieId}?api_key=${API_KEY}`
+          );
+          const data = await response.json();
+          return data.id ? { ...data, category: 'amazing_spiderman' } : null;
+        } catch (error) {
+          return null;
+        }
+      });
+
+      // Fetch Blade Trilogy movies
+      const bladePromises = bladeTrilogyIds.map(async (movieId) => {
+        try {
+          const response = await fetch(
+            `${BASE_URL}/movie/${movieId}?api_key=${API_KEY}`
+          );
+          const data = await response.json();
+          return data.id ? { ...data, category: 'blade' } : null;
+        } catch (error) {
+          return null;
+        }
+      });
+
+      // Fetch Fantastic Four (Fox) movies
+      const fantasticFourPromises = fantasticFourFoxIds.map(async (movieId) => {
+        try {
+          const response = await fetch(
+            `${BASE_URL}/movie/${movieId}?api_key=${API_KEY}`
+          );
+          const data = await response.json();
+          return data.id ? { ...data, category: 'fantastic_four' } : null;
+        } catch (error) {
+          return null;
+        }
+      });
+
+      // Fetch Marvel Netflix/Television TV shows - filter out Kiefer Sutherland
+      const netflixTVPromises = marvelNetflixTVIds.map(async (showId) => {
+        try {
+          const response = await fetch(
+            `${BASE_URL}/tv/${showId}?api_key=${API_KEY}&append_to_response=credits`
+          );
+          const data = await response.json();
+          if (!data.id) return null;
+          
+          // Block content with Kiefer Sutherland
+          const castNames = data.credits?.cast?.map(c => c.name.toLowerCase()) || [];
+          const hasKieferSutherland = castNames.some(name => 
+            name.includes('kiefer sutherland')
+          );
+          if (hasKieferSutherland) return null;
+          
+          return { ...data, category: 'netflix_tv' };
+        } catch (error) {
+          return null;
+        }
+      });
+
+      const [moviesData, tvShowsData, animationData, animatedMoviesData, xmenData, sonySSUData, raimiData, amazingData, bladeData, fantasticFourData, netflixTVData] = await Promise.all([
         Promise.all(moviePromises),
         Promise.all(tvPromises),
         Promise.all(animationPromises),
         Promise.all(animatedMoviePromises),
         Promise.all(xmenPromises),
+        Promise.all(sonySSUPromises),
+        Promise.all(raimiPromises),
+        Promise.all(amazingPromises),
+        Promise.all(bladePromises),
+        Promise.all(fantasticFourPromises),
+        Promise.all(netflixTVPromises),
       ]);
 
       // Filter out null results
@@ -1781,6 +2005,12 @@ export const fetchFranchiseContent = async (franchise) => {
       const validAnimation = animationData.filter(a => a !== null);
       const validAnimatedMovies = animatedMoviesData.filter(m => m !== null);
       const validXMen = xmenData.filter(x => x !== null);
+      const validSonySSU = sonySSUData.filter(m => m !== null);
+      const validRaimi = raimiData.filter(m => m !== null);
+      const validAmazing = amazingData.filter(m => m !== null);
+      const validBlade = bladeData.filter(m => m !== null);
+      const validFantasticFour = fantasticFourData.filter(m => m !== null);
+      const validNetflixTV = netflixTVData.filter(s => s !== null);
 
       const movies = validMovies.map((movie) => ({
         id: movie.id,
@@ -1850,7 +2080,308 @@ export const fetchFranchiseContent = async (franchise) => {
         isXMen: true,
       }));
 
-      return { movies, tvShows, animation, animatedMovies, xmenMovies };
+      const sonySSUMovies = validSonySSU.map((movie) => ({
+        id: movie.id,
+        title: movie.title,
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date
+          ? new Date(movie.release_date).getFullYear()
+          : "N/A",
+        type: "movie",
+        overview: movie.overview,
+      }));
+
+      const raimiSpiderMan = validRaimi.map((movie) => ({
+        id: movie.id,
+        title: movie.title,
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date
+          ? new Date(movie.release_date).getFullYear()
+          : "N/A",
+        type: "movie",
+        overview: movie.overview,
+      }));
+
+      const amazingSpiderMan = validAmazing.map((movie) => ({
+        id: movie.id,
+        title: movie.title,
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date
+          ? new Date(movie.release_date).getFullYear()
+          : "N/A",
+        type: "movie",
+        overview: movie.overview,
+      }));
+
+      const bladeTrilogy = validBlade.map((movie) => ({
+        id: movie.id,
+        title: movie.title,
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date
+          ? new Date(movie.release_date).getFullYear()
+          : "N/A",
+        type: "movie",
+        overview: movie.overview,
+      }));
+
+      const fantasticFourMovies = validFantasticFour.map((movie) => ({
+        id: movie.id,
+        title: movie.title,
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date
+          ? new Date(movie.release_date).getFullYear()
+          : "N/A",
+        type: "movie",
+        overview: movie.overview,
+      }));
+
+      const netflixTVShows = validNetflixTV.map((show) => ({
+        id: show.id,
+        title: show.name || show.title,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      }));
+
+      return { 
+        movies, 
+        tvShows, 
+        animation, 
+        animatedMovies, 
+        xmenMovies,
+        sonySSUMovies,
+        raimiSpiderMan,
+        amazingSpiderMan,
+        bladeTrilogy,
+        fantasticFourMovies,
+        netflixTVShows,
+      };
+    }
+
+    // Special handling for Harry Potter - fetch collection and filter for Daniel Radcliffe
+    if (franchise === "Harry Potter") {
+      // Harry Potter Collection ID: 1241
+      const collectionId = 1241;
+      
+      try {
+        // Fetch the Harry Potter collection
+        const collectionResponse = await fetch(
+          `${BASE_URL}/collection/${collectionId}?api_key=${API_KEY}`
+        );
+        const collectionData = await collectionResponse.json();
+        
+        if (!collectionData.parts || collectionData.parts.length === 0) {
+          return { movies: [], tvShows: [] };
+        }
+        
+        // Fetch detailed info for each movie to check cast for Daniel Radcliffe
+        const moviePromises = collectionData.parts.map(async (movie) => {
+          try {
+            const response = await fetch(
+              `${BASE_URL}/movie/${movie.id}?api_key=${API_KEY}&append_to_response=credits`
+            );
+            const data = await response.json();
+            if (!data.id) return null;
+            
+            // Check if Daniel Radcliffe is in the cast
+            const castNames = data.credits?.cast?.map(c => c.name.toLowerCase()) || [];
+            const hasDanielRadcliffe = castNames.some(name => 
+              name.includes('daniel radcliffe')
+            );
+            
+            // Only include movies with Daniel Radcliffe
+            if (!hasDanielRadcliffe) return null;
+            
+            return data;
+          } catch (error) {
+            return null;
+          }
+        });
+        
+        const moviesData = await Promise.all(moviePromises);
+        const validMovies = moviesData.filter(m => m !== null);
+        
+        const movies = validMovies.map((movie) => ({
+          id: movie.id,
+          title: movie.title,
+          image: getImageUrl(movie.poster_path, "w342"),
+          backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+          rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+          year: movie.release_date
+            ? new Date(movie.release_date).getFullYear()
+            : "N/A",
+          type: "movie",
+          overview: movie.overview,
+        }));
+        
+        // Sort by release year
+        const sortedMovies = movies.sort((a, b) => (a.year || 0) - (b.year || 0));
+        
+        return { movies: sortedMovies, tvShows: [] };
+      } catch (error) {
+        console.error("Error fetching Harry Potter collection:", error);
+        return { movies: [], tvShows: [] };
+      }
+    }
+
+    // Special handling for Transformers - fetch collection and TV shows
+    if (franchise === "Transformers") {
+      try {
+        // Transformers Collection ID: 8650
+        const collectionId = 8650;
+        
+        // Fetch the main Transformers collection
+        const collectionResponse = await fetch(
+          `${BASE_URL}/collection/${collectionId}?api_key=${API_KEY}`
+        );
+        const collectionData = await collectionResponse.json();
+        
+        let allMovies = [];
+        
+        if (collectionData.parts && collectionData.parts.length > 0) {
+          // Fetch detailed info for each movie
+          const moviePromises = collectionData.parts.map(async (movie) => {
+            try {
+              const response = await fetch(
+                `${BASE_URL}/movie/${movie.id}?api_key=${API_KEY}`
+              );
+              const data = await response.json();
+              if (!data.id) return null;
+              return data;
+            } catch (error) {
+              return null;
+            }
+          });
+          
+          const moviesData = await Promise.all(moviePromises);
+          allMovies = moviesData.filter(m => m !== null);
+        }
+        
+        // Also search for additional Transformers movies (Bumblebee, animated, etc.)
+        const additionalSearchTerms = ["Transformers", "Bumblebee"];
+        const additionalMoviePromises = additionalSearchTerms.map(async (term) => {
+          try {
+            const response = await fetch(
+              `${BASE_URL}/search/movie?api_key=${API_KEY}&query=${encodeURIComponent(term)}&include_adult=false`
+            );
+            const data = await response.json();
+            return data.results || [];
+          } catch (error) {
+            return [];
+          }
+        });
+        
+        const additionalResults = await Promise.all(additionalMoviePromises);
+        const additionalMovies = additionalResults.flat().filter(movie => {
+          const titleLower = movie.title.toLowerCase();
+          return titleLower.includes('transformers') || titleLower === 'bumblebee';
+        });
+        
+        // Merge and deduplicate movies
+        const existingIds = new Set(allMovies.map(m => m.id));
+        for (const movie of additionalMovies) {
+          if (!existingIds.has(movie.id)) {
+            allMovies.push(movie);
+            existingIds.add(movie.id);
+          }
+        }
+        
+        const movies = allMovies.map((movie) => ({
+          id: movie.id,
+          title: movie.title,
+          image: getImageUrl(movie.poster_path, "w342"),
+          backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+          rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+          year: movie.release_date
+            ? new Date(movie.release_date).getFullYear()
+            : "N/A",
+          type: "movie",
+          overview: movie.overview,
+        }));
+        
+        // Fetch Transformers TV shows
+        const transformersTVShows = [
+          "Transformers: Prime",
+          "Transformers: Animated",
+          "Transformers: Robots in Disguise",
+          "Transformers: Cyberverse",
+          "Transformers: War for Cybertron",
+          "Transformers: EarthSpark",
+          "Beast Wars: Transformers",
+          "Transformers: Armada",
+          "Transformers: Energon",
+          "Transformers: Cybertron",
+        ];
+        
+        const tvSearchPromises = transformersTVShows.map(async (showName) => {
+          try {
+            const searchResponse = await fetch(
+              `${BASE_URL}/search/tv?api_key=${API_KEY}&query=${encodeURIComponent(showName)}&include_adult=false`
+            );
+            const searchData = await searchResponse.json();
+            const show = searchData.results?.[0];
+            if (!show) return null;
+            
+            // Verify it's actually a Transformers show
+            const titleLower = show.name.toLowerCase();
+            if (!titleLower.includes('transformers') && !titleLower.includes('beast wars')) {
+              return null;
+            }
+            
+            return show;
+          } catch (error) {
+            return null;
+          }
+        });
+        
+        const tvSearchResults = await Promise.all(tvSearchPromises);
+        const validTVShows = tvSearchResults.filter(s => s !== null);
+        
+        // Remove duplicate TV shows
+        const uniqueTVIds = new Set();
+        const uniqueTVShows = validTVShows.filter(show => {
+          if (uniqueTVIds.has(show.id)) return false;
+          uniqueTVIds.add(show.id);
+          return true;
+        });
+        
+        const tvShows = uniqueTVShows.map((show) => ({
+          id: show.id,
+          title: show.name,
+          image: getImageUrl(show.poster_path, "w342"),
+          backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+          rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+          year: show.first_air_date
+            ? new Date(show.first_air_date).getFullYear()
+            : "N/A",
+          type: "tv",
+          overview: show.overview,
+        }));
+        
+        // Sort movies and TV shows by year
+        const sortedMovies = movies.sort((a, b) => (a.year || 0) - (b.year || 0));
+        const sortedTVShows = tvShows.sort((a, b) => (a.year || 0) - (b.year || 0));
+        
+        return { movies: sortedMovies, tvShows: sortedTVShows };
+      } catch (error) {
+        console.error("Error fetching Transformers collection:", error);
+        return { movies: [], tvShows: [] };
+      }
     }
 
     // Special handling for Star Wars - fetch collections
@@ -1915,15 +2446,32 @@ export const fetchFranchiseContent = async (franchise) => {
         "Skeleton Crew",
       ];
 
+      // Fetch TV shows with credits to filter out Timothée Chalamet
       const tvSearchPromises = starWarsTVShows.map(async (showName) => {
         try {
-          const response = await fetch(
+          const searchResponse = await fetch(
             `${BASE_URL}/search/tv?api_key=${API_KEY}&query=${encodeURIComponent(
               showName
             )}&include_adult=false`
           );
-          const data = await response.json();
-          return data.results?.[0] || null;
+          const searchData = await searchResponse.json();
+          const show = searchData.results?.[0];
+          if (!show) return null;
+          
+          // Fetch credits to check for Timothée Chalamet
+          const creditsResponse = await fetch(
+            `${BASE_URL}/tv/${show.id}/credits?api_key=${API_KEY}`
+          );
+          const creditsData = await creditsResponse.json();
+          const castNames = creditsData.cast?.map(c => c.name.toLowerCase()) || [];
+          
+          // Block content with Timothée Chalamet
+          const hasTimotheeChalamet = castNames.some(name => 
+            name.includes('timothee chalamet') || name.includes('timothée chalamet')
+          );
+          if (hasTimotheeChalamet) return null;
+          
+          return show;
         } catch (error) {
           console.error(`Error searching TV show ${showName}:`, error);
           return null;
@@ -1933,6 +2481,29 @@ export const fetchFranchiseContent = async (franchise) => {
       const collectionsData = await Promise.all(collectionPromises);
       const tvSearchResults = await Promise.all(tvSearchPromises);
       const collectionMovies = collectionsData.flat();
+
+      // Fetch movie credits to filter out Timothée Chalamet
+      const movieCreditsPromises = collectionMovies.map(async (movie) => {
+        try {
+          const creditsResponse = await fetch(
+            `${BASE_URL}/movie/${movie.id}/credits?api_key=${API_KEY}`
+          );
+          const creditsData = await creditsResponse.json();
+          const castNames = creditsData.cast?.map(c => c.name.toLowerCase()) || [];
+          
+          // Block content with Timothée Chalamet
+          const hasTimotheeChalamet = castNames.some(name => 
+            name.includes('timothee chalamet') || name.includes('timothée chalamet')
+          );
+          if (hasTimotheeChalamet) return null;
+          
+          return movie;
+        } catch (error) {
+          return movie; // Keep movie if credits fetch fails
+        }
+      });
+
+      const filteredCollectionMovies = (await Promise.all(movieCreditsPromises)).filter(m => m !== null);
 
       // Also fetch general Star Wars content
       const moviePromises = [];
@@ -1976,13 +2547,56 @@ export const fetchFranchiseContent = async (franchise) => {
       );
       const allTVResults = tvDataList.flatMap((data) => data.results || []);
 
-      const allMovies = [...collectionMovies, ...allMovieResults];
+      // Filter discover movies for Timothée Chalamet
+      const discoverMovieCreditsPromises = allMovieResults.map(async (movie) => {
+        try {
+          const creditsResponse = await fetch(
+            `${BASE_URL}/movie/${movie.id}/credits?api_key=${API_KEY}`
+          );
+          const creditsData = await creditsResponse.json();
+          const castNames = creditsData.cast?.map(c => c.name.toLowerCase()) || [];
+          
+          const hasTimotheeChalamet = castNames.some(name => 
+            name.includes('timothee chalamet') || name.includes('timothée chalamet')
+          );
+          if (hasTimotheeChalamet) return null;
+          
+          return movie;
+        } catch (error) {
+          return movie;
+        }
+      });
+
+      // Filter discover TV shows for Timothée Chalamet
+      const discoverTVCreditsPromises = allTVResults.map(async (show) => {
+        try {
+          const creditsResponse = await fetch(
+            `${BASE_URL}/tv/${show.id}/credits?api_key=${API_KEY}`
+          );
+          const creditsData = await creditsResponse.json();
+          const castNames = creditsData.cast?.map(c => c.name.toLowerCase()) || [];
+          
+          const hasTimotheeChalamet = castNames.some(name => 
+            name.includes('timothee chalamet') || name.includes('timothée chalamet')
+          );
+          if (hasTimotheeChalamet) return null;
+          
+          return show;
+        } catch (error) {
+          return show;
+        }
+      });
+
+      const filteredDiscoverMovies = (await Promise.all(discoverMovieCreditsPromises)).filter(m => m !== null);
+      const filteredDiscoverTV = (await Promise.all(discoverTVCreditsPromises)).filter(s => s !== null);
+
+      const allMovies = [...filteredCollectionMovies, ...filteredDiscoverMovies];
       const uniqueMovies = Array.from(
         new Map(allMovies.map((movie) => [movie.id, movie])).values()
       );
 
       const searchedTVShows = tvSearchResults.filter((show) => show !== null);
-      const allTVShows = [...searchedTVShows, ...allTVResults];
+      const allTVShows = [...searchedTVShows, ...filteredDiscoverTV];
       const uniqueTVShows = Array.from(
         new Map(allTVShows.map((show) => [show.id, show])).values()
       );
@@ -2393,7 +3007,7 @@ export const fetchFranchiseContent = async (franchise) => {
 
       const [movieResponses, tvResponses] = await Promise.all([
         Promise.all(moviePromises),
-        Promise.all(tvResponses),
+        Promise.all(tvPromises),
       ]);
 
       const movieDataList = await Promise.all(
@@ -2670,7 +3284,7 @@ export const fetchFranchiseContent = async (franchise) => {
 
       const [movieResponses, tvResponses] = await Promise.all([
         Promise.all(moviePromises),
-        Promise.all(tvResponses),
+        Promise.all(tvPromises),
       ]);
 
       const movieDataList = await Promise.all(
@@ -3004,7 +3618,7 @@ export const fetchFranchiseContent = async (franchise) => {
 
       const [movieResponses, tvResponses] = await Promise.all([
         Promise.all(moviePromises),
-        Promise.all(tvResponses),
+        Promise.all(tvPromises),
       ]);
 
       const movieDataList = await Promise.all(
@@ -3699,6 +4313,14 @@ export const fetchStructuredFranchiseContent = async (franchise) => {
     if (franchise === "Marvel") {
       const sections = [];
       
+      // Extract new collections from result
+      const sonySSUMovies = result.sonySSUMovies || [];
+      const raimiSpiderMan = result.raimiSpiderMan || [];
+      const amazingSpiderMan = result.amazingSpiderMan || [];
+      const bladeTrilogy = result.bladeTrilogy || [];
+      const fantasticFourMovies = result.fantasticFourMovies || [];
+      const netflixTVShows = result.netflixTVShows || [];
+      
       // Sort movies by year (chronological)
       const sortedMovies = [...movies].sort((a, b) => (a.year || 0) - (b.year || 0));
       
@@ -3736,28 +4358,1047 @@ export const fetchStructuredFranchiseContent = async (franchise) => {
         sections.push({ id: "phase_5", title: "Phase 5 (2023-2026)", data: phase5 });
       }
       
+      // All MCU TV Shows (Disney+)
+      if (tvShows.length > 0) {
+        sections.push({ id: "all_tv", title: "Disney+ Series", data: tvShows });
+      }
+      
       // Fox X-Men Movies (separate row)
       if (xmenMovies.length > 0) {
         const sortedXMen = [...xmenMovies].sort((a, b) => (a.year || 0) - (b.year || 0));
         sections.push({ id: "xmen", title: "X-Men (Fox)", data: sortedXMen });
       }
       
-      // Marvel Animation - combine TV shows and movies, sorted by year
-      const allAnimation = [...animation, ...animatedMovies];
-      if (allAnimation.length > 0) {
-        const sortedAnimation = [...allAnimation].sort((a, b) => (b.year || 0) - (a.year || 0));
-        sections.push({ id: "animation", title: "Marvel Animation", data: sortedAnimation });
+      // Sony Spider-Man Universe (Venom, Morbius, etc.)
+      if (sonySSUMovies.length > 0) {
+        const sortedSSU = [...sonySSUMovies].sort((a, b) => (a.year || 0) - (b.year || 0));
+        sections.push({ id: "sony_ssu", title: "Sony Spider-Man Universe", data: sortedSSU });
       }
       
-      // All MCU TV Shows
-      if (tvShows.length > 0) {
-        sections.push({ id: "all_tv", title: "Disney+ Series", data: tvShows });
+      // Sam Raimi Spider-Man Trilogy (Tobey Maguire)
+      if (raimiSpiderMan.length > 0) {
+        const sortedRaimi = [...raimiSpiderMan].sort((a, b) => (a.year || 0) - (b.year || 0));
+        sections.push({ id: "raimi_spiderman", title: "Spider-Man (Tobey Maguire)", data: sortedRaimi });
+      }
+      
+      // Amazing Spider-Man (Andrew Garfield)
+      if (amazingSpiderMan.length > 0) {
+        const sortedAmazing = [...amazingSpiderMan].sort((a, b) => (a.year || 0) - (b.year || 0));
+        sections.push({ id: "amazing_spiderman", title: "Amazing Spider-Man (Andrew Garfield)", data: sortedAmazing });
+      }
+      
+      // Fantastic Four (Fox)
+      if (fantasticFourMovies.length > 0) {
+        const sortedFF = [...fantasticFourMovies].sort((a, b) => (a.year || 0) - (b.year || 0));
+        sections.push({ id: "fantastic_four", title: "Fantastic Four (Fox)", data: sortedFF });
+      }
+      
+      // Marvel Television (Netflix/Pre-Disney+)
+      if (netflixTVShows.length > 0) {
+        const sortedNetflix = [...netflixTVShows].sort((a, b) => (a.year || 0) - (b.year || 0));
+        sections.push({ id: "netflix_tv", title: "Marvel Television (Netflix)", data: sortedNetflix });
       }
       
       return { sections };
     }
     
-    // Filter movies - remove adult content and unrelated content
+    // Special handling for Harry Potter
+    if (franchise === "Harry Potter") {
+      const sections = [];
+      
+      // Sort movies by year (chronological)
+      const sortedMovies = [...movies].sort((a, b) => (a.year || 0) - (b.year || 0));
+      
+      if (sortedMovies.length > 0) {
+        sections.push({ 
+          id: "harry_potter_films", 
+          title: "Harry Potter Films (Daniel Radcliffe)", 
+          data: sortedMovies 
+        });
+      }
+      
+      return { sections };
+    }
+    
+    // Special handling for Transformers
+    if (franchise === "Transformers") {
+      const sections = [];
+      
+      // Sort movies by year (chronological)
+      const sortedMovies = [...movies].sort((a, b) => (a.year || 0) - (b.year || 0));
+      
+      // Sort TV shows by year (chronological)
+      const sortedTVShows = [...tvShows].sort((a, b) => (a.year || 0) - (b.year || 0));
+      
+      if (sortedMovies.length > 0) {
+        sections.push({ 
+          id: "transformers_movies", 
+          title: "Transformers Movies", 
+          data: sortedMovies 
+        });
+      }
+      
+      if (sortedTVShows.length > 0) {
+        sections.push({ 
+          id: "transformers_tv", 
+          title: "Transformers TV Series", 
+          data: sortedTVShows 
+        });
+      }
+      
+      return { sections };
+    }
+    
+    // Special handling for Netflix - fetch 500 titles (250 movies + 250 TV shows) with tabs
+    if (franchise === "Netflix" || franchise === "Netflix Originals") {
+      const seenMovieIds = new Set();
+      const seenTVIds = new Set();
+      
+      // Target: 250 movies + 250 TV shows = 500 total
+      const targetMovies = 250;
+      const targetTVShows = 250;
+      const pagesNeeded = 25; // 20 per page * 25 = 500, enough buffer for filtering
+      
+      // Fetch movies and TV shows in parallel
+      const moviePromises = [];
+      const tvPromises = [];
+      
+      for (let page = 1; page <= pagesNeeded; page++) {
+        moviePromises.push(
+          fetch(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_companies=213&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json())
+            .then(data => data.results || [])
+            .catch(() => [])
+        );
+        tvPromises.push(
+          fetch(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=213&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json())
+            .then(data => data.results || [])
+            .catch(() => [])
+        );
+      }
+      
+      const [movieResults, tvResults] = await Promise.all([
+        Promise.all(moviePromises),
+        Promise.all(tvPromises)
+      ]);
+      
+      const allMovies = movieResults.flat();
+      const allTVShows = tvResults.flat();
+      
+      // Process and limit to exactly 250 movies
+      const processedMovies = allMovies
+        .filter(movie => {
+          if (seenMovieIds.has(movie.id)) return false;
+          seenMovieIds.add(movie.id);
+          if (isAdultContent(movie)) return false;
+          return true;
+        })
+        .slice(0, targetMovies)
+        .map(movie => ({
+          id: movie.id,
+          title: movie.title,
+          image: getImageUrl(movie.poster_path, "w342"),
+          backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+          rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+          year: movie.release_date ? new Date(movie.release_date).getFullYear() : "N/A",
+          type: "movie",
+          overview: movie.overview,
+          genre_ids: movie.genre_ids || [],
+        }));
+      
+      // Process and limit to exactly 250 TV shows
+      const processedTVShows = allTVShows
+        .filter(show => {
+          if (seenTVIds.has(show.id)) return false;
+          seenTVIds.add(show.id);
+          if (isAdultContent(show)) return false;
+          return true;
+        })
+        .slice(0, targetTVShows)
+        .map(show => ({
+          id: show.id,
+          title: show.name,
+          image: getImageUrl(show.poster_path, "w342"),
+          backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+          rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+          year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
+          type: "tv",
+          overview: show.overview,
+          genre_ids: show.genre_ids || [],
+        }));
+      
+      const currentYear = new Date().getFullYear();
+      
+      // Build MOVIE sections - store ALL matching items for each genre
+      const movieSections = [];
+      
+      // All Movies (for browsing)
+      movieSections.push({ id: "netflix_movie_all", title: "All Movies", data: [...processedMovies] });
+      
+      // Trending Movies (top rated)
+      const trendingMovies = [...processedMovies].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating));
+      if (trendingMovies.length > 0) movieSections.push({ id: "netflix_movie_trending", title: "Top Rated Movies", data: trendingMovies });
+      
+      // New Release Movies
+      const newMovies = [...processedMovies].filter(m => m.year >= currentYear - 1).sort((a, b) => (b.year || 0) - (a.year || 0));
+      if (newMovies.length > 0) movieSections.push({ id: "netflix_movie_new", title: "New Releases", data: newMovies });
+      
+      // Action & Thriller Movies
+      const actionMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [28, 53].includes(g)));
+      if (actionMovies.length > 0) movieSections.push({ id: "netflix_movie_action", title: "Action & Thriller", data: actionMovies });
+      
+      // Comedy Movies
+      const comedyMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [35].includes(g)));
+      if (comedyMovies.length > 0) movieSections.push({ id: "netflix_movie_comedy", title: "Comedy", data: comedyMovies });
+      
+      // Drama Movies
+      const dramaMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [18].includes(g)));
+      if (dramaMovies.length > 0) movieSections.push({ id: "netflix_movie_drama", title: "Drama", data: dramaMovies });
+      
+      // Horror Movies
+      const horrorMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [27, 9648].includes(g)));
+      if (horrorMovies.length > 0) movieSections.push({ id: "netflix_movie_horror", title: "Horror & Mystery", data: horrorMovies });
+      
+      // Sci-Fi & Fantasy Movies
+      const scifiMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [878, 14].includes(g)));
+      if (scifiMovies.length > 0) movieSections.push({ id: "netflix_movie_scifi", title: "Sci-Fi & Fantasy", data: scifiMovies });
+      
+      // Romance Movies
+      const romanceMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [10749].includes(g)));
+      if (romanceMovies.length > 0) movieSections.push({ id: "netflix_movie_romance", title: "Romance", data: romanceMovies });
+      
+      // Documentary Movies
+      const docMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [99].includes(g)));
+      if (docMovies.length > 0) movieSections.push({ id: "netflix_movie_doc", title: "Documentaries", data: docMovies });
+      
+      // Animation Movies
+      const animMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [16].includes(g)));
+      if (animMovies.length > 0) movieSections.push({ id: "netflix_movie_animation", title: "Animation", data: animMovies });
+      
+      // Family Movies
+      const familyMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [10751].includes(g)));
+      if (familyMovies.length > 0) movieSections.push({ id: "netflix_movie_family", title: "Family", data: familyMovies });
+      
+      // Crime Movies
+      const crimeMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [80].includes(g)));
+      if (crimeMovies.length > 0) movieSections.push({ id: "netflix_movie_crime", title: "Crime", data: crimeMovies });
+      
+      // Build TV SHOW sections - store ALL matching items for each genre
+      const tvSections = [];
+      
+      // All TV Shows
+      tvSections.push({ id: "netflix_tv_all", title: "All TV Shows", data: [...processedTVShows] });
+      
+      // Trending TV Shows (top rated)
+      const trendingTV = [...processedTVShows].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating));
+      if (trendingTV.length > 0) tvSections.push({ id: "netflix_tv_trending", title: "Top Rated TV Shows", data: trendingTV });
+      
+      // New TV Shows
+      const newTV = [...processedTVShows].filter(s => s.year >= currentYear - 1).sort((a, b) => (b.year || 0) - (a.year || 0));
+      if (newTV.length > 0) tvSections.push({ id: "netflix_tv_new", title: "New Releases", data: newTV });
+      
+      // Action & Adventure TV
+      const actionTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10759, 28].includes(g)));
+      if (actionTV.length > 0) tvSections.push({ id: "netflix_tv_action", title: "Action & Adventure", data: actionTV });
+      
+      // Comedy TV
+      const comedyTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [35].includes(g)));
+      if (comedyTV.length > 0) tvSections.push({ id: "netflix_tv_comedy", title: "Comedy", data: comedyTV });
+      
+      // Drama TV
+      const dramaTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [18].includes(g)));
+      if (dramaTV.length > 0) tvSections.push({ id: "netflix_tv_drama", title: "Drama", data: dramaTV });
+      
+      // Crime TV
+      const crimeTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [80].includes(g)));
+      if (crimeTV.length > 0) tvSections.push({ id: "netflix_tv_crime", title: "Crime", data: crimeTV });
+      
+      // Sci-Fi & Fantasy TV
+      const scifiTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10765, 878, 14].includes(g)));
+      if (scifiTV.length > 0) tvSections.push({ id: "netflix_tv_scifi", title: "Sci-Fi & Fantasy", data: scifiTV });
+      
+      // Mystery TV
+      const mysteryTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [9648].includes(g)));
+      if (mysteryTV.length > 0) tvSections.push({ id: "netflix_tv_mystery", title: "Mystery", data: mysteryTV });
+      
+      // Documentary TV
+      const docTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [99].includes(g)));
+      if (docTV.length > 0) tvSections.push({ id: "netflix_tv_doc", title: "Documentaries", data: docTV });
+      
+      // Animation TV
+      const animTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [16].includes(g)));
+      if (animTV.length > 0) tvSections.push({ id: "netflix_tv_animation", title: "Animation", data: animTV });
+      
+      // Reality TV
+      const realityTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10764].includes(g)));
+      if (realityTV.length > 0) tvSections.push({ id: "netflix_tv_reality", title: "Reality", data: realityTV });
+      
+      // Kids TV
+      const kidsTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10762, 10751].includes(g)));
+      if (kidsTV.length > 0) tvSections.push({ id: "netflix_tv_kids", title: "Kids", data: kidsTV });
+      
+      // Filter out sections with less than 3 items to avoid sparse rows
+      const filteredMovieSections = movieSections.filter(s => s.data.length >= 3);
+      const filteredTVSections = tvSections.filter(s => s.data.length >= 3);
+      
+      return { 
+        sections: filteredMovieSections,
+        movieSections: filteredMovieSections,
+        tvSections: filteredTVSections,
+        totalMovies: processedMovies.length,
+        totalTVShows: processedTVShows.length,
+        totalContent: processedMovies.length + processedTVShows.length,
+        hasTabs: true
+      };
+    }
+    
+    // Special handling for Disney+ - fetch 500 titles (250 movies + 250 TV shows) with tabs
+    if (franchise === "Disney+" || franchise === "Disney") {
+      const seenMovieIds = new Set();
+      const seenTVIds = new Set();
+      
+      // Disney+ network ID: 2739
+      const disneyNetworkId = 2739;
+      const disneyCompanyIds = "2|3|6125|420|1";
+      
+      // Target: 250 movies + 250 TV shows = 500 total
+      const targetMovies = 250;
+      const targetTVShows = 250;
+      const pagesNeeded = 15;
+      
+      const moviePromises = [];
+      const tvPromises = [];
+      
+      for (let page = 1; page <= pagesNeeded; page++) {
+        moviePromises.push(
+          fetch(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_companies=${disneyCompanyIds}&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json())
+            .then(data => data.results || [])
+            .catch(() => [])
+        );
+        tvPromises.push(
+          fetch(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=${disneyNetworkId}&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json())
+            .then(data => data.results || [])
+            .catch(() => [])
+        );
+      }
+      
+      const [movieResults, tvResults] = await Promise.all([
+        Promise.all(moviePromises),
+        Promise.all(tvPromises)
+      ]);
+      
+      const allMovies = movieResults.flat();
+      const allTVShows = tvResults.flat();
+      
+      // Process and limit to exactly 250 movies
+      const processedMovies = allMovies
+        .filter(movie => {
+          if (seenMovieIds.has(movie.id)) return false;
+          seenMovieIds.add(movie.id);
+          if (isAdultContent(movie)) return false;
+          return true;
+        })
+        .slice(0, targetMovies)
+        .map(movie => ({
+          id: movie.id,
+          title: movie.title,
+          image: getImageUrl(movie.poster_path, "w342"),
+          backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+          rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+          year: movie.release_date ? new Date(movie.release_date).getFullYear() : "N/A",
+          type: "movie",
+          overview: movie.overview,
+          genre_ids: movie.genre_ids || [],
+        }));
+      
+      // Process and limit to exactly 250 TV shows
+      const processedTVShows = allTVShows
+        .filter(show => {
+          if (seenTVIds.has(show.id)) return false;
+          seenTVIds.add(show.id);
+          if (isAdultContent(show)) return false;
+          return true;
+        })
+        .slice(0, targetTVShows)
+        .map(show => ({
+          id: show.id,
+          title: show.name,
+          image: getImageUrl(show.poster_path, "w342"),
+          backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+          rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+          year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
+          type: "tv",
+          overview: show.overview,
+          genre_ids: show.genre_ids || [],
+        }));
+      
+      const currentYear = new Date().getFullYear();
+      
+      // Build MOVIE sections
+      const movieSections = [];
+      
+      const trendingMovies = [...processedMovies].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingMovies.length > 0) movieSections.push({ id: "disney_movie_trending", title: "Trending Movies", data: trendingMovies });
+      
+      const newMovies = [...processedMovies].filter(m => m.year >= currentYear - 1).sort((a, b) => (b.year || 0) - (a.year || 0)).slice(0, 20);
+      if (newMovies.length > 0) movieSections.push({ id: "disney_movie_new", title: "New on Disney+", data: newMovies });
+      
+      const classicMovies = [...processedMovies].filter(m => m.year && m.year < 2000 && parseFloat(m.rating) >= 7.0).sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (classicMovies.length > 0) movieSections.push({ id: "disney_movie_classics", title: "Disney Classics", data: classicMovies });
+      
+      const animMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [16].includes(g))).slice(0, 20);
+      if (animMovies.length > 0) movieSections.push({ id: "disney_movie_animation", title: "Animation", data: animMovies });
+      
+      const familyMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [10751].includes(g))).slice(0, 20);
+      if (familyMovies.length > 0) movieSections.push({ id: "disney_movie_family", title: "Family", data: familyMovies });
+      
+      const actionMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [28, 12].includes(g))).slice(0, 20);
+      if (actionMovies.length > 0) movieSections.push({ id: "disney_movie_action", title: "Action & Adventure", data: actionMovies });
+      
+      const comedyMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [35].includes(g))).slice(0, 20);
+      if (comedyMovies.length > 0) movieSections.push({ id: "disney_movie_comedy", title: "Comedy", data: comedyMovies });
+      
+      const scifiMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [878, 14].includes(g))).slice(0, 20);
+      if (scifiMovies.length > 0) movieSections.push({ id: "disney_movie_scifi", title: "Sci-Fi & Fantasy", data: scifiMovies });
+      
+      const dramaMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [18].includes(g))).slice(0, 20);
+      if (dramaMovies.length > 0) movieSections.push({ id: "disney_movie_drama", title: "Drama", data: dramaMovies });
+      
+      const docMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [99].includes(g))).slice(0, 20);
+      if (docMovies.length > 0) movieSections.push({ id: "disney_movie_doc", title: "Documentaries", data: docMovies });
+      
+      // Build TV SHOW sections
+      const tvSections = [];
+      
+      const trendingTV = [...processedTVShows].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingTV.length > 0) tvSections.push({ id: "disney_tv_trending", title: "Trending TV Shows", data: trendingTV });
+      
+      const newTV = [...processedTVShows].filter(s => s.year >= currentYear - 1).sort((a, b) => (b.year || 0) - (a.year || 0)).slice(0, 20);
+      if (newTV.length > 0) tvSections.push({ id: "disney_tv_new", title: "New on Disney+", data: newTV });
+      
+      const animTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [16].includes(g))).slice(0, 20);
+      if (animTV.length > 0) tvSections.push({ id: "disney_tv_animation", title: "Animation", data: animTV });
+      
+      const familyTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10751, 10762].includes(g))).slice(0, 20);
+      if (familyTV.length > 0) tvSections.push({ id: "disney_tv_family", title: "Family", data: familyTV });
+      
+      const actionTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10759, 28, 12].includes(g))).slice(0, 20);
+      if (actionTV.length > 0) tvSections.push({ id: "disney_tv_action", title: "Action & Adventure", data: actionTV });
+      
+      const comedyTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [35].includes(g))).slice(0, 20);
+      if (comedyTV.length > 0) tvSections.push({ id: "disney_tv_comedy", title: "Comedy", data: comedyTV });
+      
+      const scifiTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10765, 878, 14].includes(g))).slice(0, 20);
+      if (scifiTV.length > 0) tvSections.push({ id: "disney_tv_scifi", title: "Sci-Fi & Fantasy", data: scifiTV });
+      
+      const dramaTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [18].includes(g))).slice(0, 20);
+      if (dramaTV.length > 0) tvSections.push({ id: "disney_tv_drama", title: "Drama", data: dramaTV });
+      
+      const docTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [99].includes(g))).slice(0, 20);
+      if (docTV.length > 0) tvSections.push({ id: "disney_tv_doc", title: "Documentaries", data: docTV });
+      
+      const realityTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10764].includes(g))).slice(0, 20);
+      if (realityTV.length > 0) tvSections.push({ id: "disney_tv_reality", title: "Reality", data: realityTV });
+      
+      const kidsTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10762].includes(g))).slice(0, 20);
+      if (kidsTV.length > 0) tvSections.push({ id: "disney_tv_kids", title: "Kids", data: kidsTV });
+      
+      return { 
+        sections: movieSections,
+        movieSections,
+        tvSections,
+        totalMovies: processedMovies.length,
+        totalTVShows: processedTVShows.length,
+        totalContent: processedMovies.length + processedTVShows.length,
+        hasTabs: true
+      };
+    }
+    
+
+    // Special handling for HBO Max / Max - fetch 500 titles with tabs
+    if (franchise === "HBO Max" || franchise === "Max") {
+      const seenMovieIds = new Set();
+      const seenTVIds = new Set();
+      const targetMovies = 250;
+      const targetTVShows = 250;
+      const pagesNeeded = 15;
+      
+      const moviePromises = [];
+      const tvPromises = [];
+      
+      for (let page = 1; page <= pagesNeeded; page++) {
+        moviePromises.push(
+          fetch(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_companies=174&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+        tvPromises.push(
+          fetch(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=49|3186&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+      }
+      
+      const [movieResults, tvResults] = await Promise.all([Promise.all(moviePromises), Promise.all(tvPromises)]);
+      const allMovies = movieResults.flat();
+      const allTVShows = tvResults.flat();
+      
+      const processedMovies = allMovies.filter(movie => {
+        if (seenMovieIds.has(movie.id)) return false;
+        seenMovieIds.add(movie.id);
+        if (isAdultContent(movie)) return false;
+        return true;
+      }).slice(0, targetMovies).map(movie => ({
+        id: movie.id, title: movie.title, image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date ? new Date(movie.release_date).getFullYear() : "N/A",
+        type: "movie", overview: movie.overview, genre_ids: movie.genre_ids || [],
+      }));
+      
+      const processedTVShows = allTVShows.filter(show => {
+        if (seenTVIds.has(show.id)) return false;
+        seenTVIds.add(show.id);
+        if (isAdultContent(show)) return false;
+        return true;
+      }).slice(0, targetTVShows).map(show => ({
+        id: show.id, title: show.name, image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
+        type: "tv", overview: show.overview, genre_ids: show.genre_ids || [],
+      }));
+      
+      const currentYear = new Date().getFullYear();
+      const movieSections = [];
+      const tvSections = [];
+      
+      // Movie sections
+      const trendingMovies = [...processedMovies].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingMovies.length > 0) movieSections.push({ id: "max_movie_trending", title: "Trending Movies", data: trendingMovies });
+      const newMovies = [...processedMovies].filter(m => m.year >= currentYear - 1).slice(0, 20);
+      if (newMovies.length > 0) movieSections.push({ id: "max_movie_new", title: "New Releases", data: newMovies });
+      const actionMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [28, 53].includes(g))).slice(0, 20);
+      if (actionMovies.length > 0) movieSections.push({ id: "max_movie_action", title: "Action & Thriller", data: actionMovies });
+      const comedyMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [35].includes(g))).slice(0, 20);
+      if (comedyMovies.length > 0) movieSections.push({ id: "max_movie_comedy", title: "Comedy", data: comedyMovies });
+      const dramaMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [18].includes(g))).slice(0, 20);
+      if (dramaMovies.length > 0) movieSections.push({ id: "max_movie_drama", title: "Drama", data: dramaMovies });
+      const horrorMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [27, 9648].includes(g))).slice(0, 20);
+      if (horrorMovies.length > 0) movieSections.push({ id: "max_movie_horror", title: "Horror & Mystery", data: horrorMovies });
+      const scifiMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [878, 14].includes(g))).slice(0, 20);
+      if (scifiMovies.length > 0) movieSections.push({ id: "max_movie_scifi", title: "Sci-Fi & Fantasy", data: scifiMovies });
+      const docMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [99].includes(g))).slice(0, 20);
+      if (docMovies.length > 0) movieSections.push({ id: "max_movie_doc", title: "Documentaries", data: docMovies });
+      
+      // TV sections
+      const trendingTV = [...processedTVShows].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingTV.length > 0) tvSections.push({ id: "max_tv_trending", title: "Trending TV Shows", data: trendingTV });
+      const newTV = [...processedTVShows].filter(s => s.year >= currentYear - 1).slice(0, 20);
+      if (newTV.length > 0) tvSections.push({ id: "max_tv_new", title: "New Releases", data: newTV });
+      const dramaTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [18].includes(g))).slice(0, 20);
+      if (dramaTV.length > 0) tvSections.push({ id: "max_tv_drama", title: "Drama", data: dramaTV });
+      const comedyTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [35].includes(g))).slice(0, 20);
+      if (comedyTV.length > 0) tvSections.push({ id: "max_tv_comedy", title: "Comedy", data: comedyTV });
+      const crimeTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [80].includes(g))).slice(0, 20);
+      if (crimeTV.length > 0) tvSections.push({ id: "max_tv_crime", title: "Crime", data: crimeTV });
+      const scifiTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10765, 878, 14].includes(g))).slice(0, 20);
+      if (scifiTV.length > 0) tvSections.push({ id: "max_tv_scifi", title: "Sci-Fi & Fantasy", data: scifiTV });
+      const docTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [99].includes(g))).slice(0, 20);
+      if (docTV.length > 0) tvSections.push({ id: "max_tv_doc", title: "Documentaries", data: docTV });
+      const realityTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10764].includes(g))).slice(0, 20);
+      if (realityTV.length > 0) tvSections.push({ id: "max_tv_reality", title: "Reality", data: realityTV });
+      
+      return { sections: movieSections, movieSections, tvSections, totalMovies: processedMovies.length, totalTVShows: processedTVShows.length, totalContent: processedMovies.length + processedTVShows.length, hasTabs: true };
+    }
+
+    // Special handling for Hulu - fetch 500 titles with tabs
+    if (franchise === "Hulu") {
+      const seenMovieIds = new Set();
+      const seenTVIds = new Set();
+      const targetMovies = 250;
+      const targetTVShows = 250;
+      const pagesNeeded = 15;
+      
+      const moviePromises = [];
+      const tvPromises = [];
+      
+      for (let page = 1; page <= pagesNeeded; page++) {
+        moviePromises.push(
+          fetch(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_watch_providers=15&watch_region=US&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+        tvPromises.push(
+          fetch(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=453&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+      }
+      
+      const [movieResults, tvResults] = await Promise.all([Promise.all(moviePromises), Promise.all(tvPromises)]);
+      const allMovies = movieResults.flat();
+      const allTVShows = tvResults.flat();
+      
+      const processedMovies = allMovies.filter(movie => {
+        if (seenMovieIds.has(movie.id)) return false;
+        seenMovieIds.add(movie.id);
+        if (isAdultContent(movie)) return false;
+        return true;
+      }).slice(0, targetMovies).map(movie => ({
+        id: movie.id, title: movie.title, image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date ? new Date(movie.release_date).getFullYear() : "N/A",
+        type: "movie", overview: movie.overview, genre_ids: movie.genre_ids || [],
+      }));
+      
+      const processedTVShows = allTVShows.filter(show => {
+        if (seenTVIds.has(show.id)) return false;
+        seenTVIds.add(show.id);
+        if (isAdultContent(show)) return false;
+        return true;
+      }).slice(0, targetTVShows).map(show => ({
+        id: show.id, title: show.name, image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
+        type: "tv", overview: show.overview, genre_ids: show.genre_ids || [],
+      }));
+      
+      const currentYear = new Date().getFullYear();
+      const movieSections = [];
+      const tvSections = [];
+      
+      const trendingMovies = [...processedMovies].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingMovies.length > 0) movieSections.push({ id: "hulu_movie_trending", title: "Trending Movies", data: trendingMovies });
+      const newMovies = [...processedMovies].filter(m => m.year >= currentYear - 1).slice(0, 20);
+      if (newMovies.length > 0) movieSections.push({ id: "hulu_movie_new", title: "New Releases", data: newMovies });
+      const actionMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [28, 53].includes(g))).slice(0, 20);
+      if (actionMovies.length > 0) movieSections.push({ id: "hulu_movie_action", title: "Action & Thriller", data: actionMovies });
+      const comedyMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [35].includes(g))).slice(0, 20);
+      if (comedyMovies.length > 0) movieSections.push({ id: "hulu_movie_comedy", title: "Comedy", data: comedyMovies });
+      const dramaMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [18].includes(g))).slice(0, 20);
+      if (dramaMovies.length > 0) movieSections.push({ id: "hulu_movie_drama", title: "Drama", data: dramaMovies });
+      const horrorMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [27].includes(g))).slice(0, 20);
+      if (horrorMovies.length > 0) movieSections.push({ id: "hulu_movie_horror", title: "Horror", data: horrorMovies });
+      const animMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [16].includes(g))).slice(0, 20);
+      if (animMovies.length > 0) movieSections.push({ id: "hulu_movie_animation", title: "Animation", data: animMovies });
+      
+      const trendingTV = [...processedTVShows].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingTV.length > 0) tvSections.push({ id: "hulu_tv_trending", title: "Trending TV Shows", data: trendingTV });
+      const newTV = [...processedTVShows].filter(s => s.year >= currentYear - 1).slice(0, 20);
+      if (newTV.length > 0) tvSections.push({ id: "hulu_tv_new", title: "New Releases", data: newTV });
+      const dramaTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [18].includes(g))).slice(0, 20);
+      if (dramaTV.length > 0) tvSections.push({ id: "hulu_tv_drama", title: "Drama", data: dramaTV });
+      const comedyTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [35].includes(g))).slice(0, 20);
+      if (comedyTV.length > 0) tvSections.push({ id: "hulu_tv_comedy", title: "Comedy", data: comedyTV });
+      const crimeTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [80].includes(g))).slice(0, 20);
+      if (crimeTV.length > 0) tvSections.push({ id: "hulu_tv_crime", title: "Crime", data: crimeTV });
+      const realityTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10764].includes(g))).slice(0, 20);
+      if (realityTV.length > 0) tvSections.push({ id: "hulu_tv_reality", title: "Reality", data: realityTV });
+      const animTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [16].includes(g))).slice(0, 20);
+      if (animTV.length > 0) tvSections.push({ id: "hulu_tv_animation", title: "Animation", data: animTV });
+      
+      return { sections: movieSections, movieSections, tvSections, totalMovies: processedMovies.length, totalTVShows: processedTVShows.length, totalContent: processedMovies.length + processedTVShows.length, hasTabs: true };
+    }
+
+    // Special handling for Paramount+ - fetch 500 titles with tabs
+    if (franchise === "Paramount+") {
+      const seenMovieIds = new Set();
+      const seenTVIds = new Set();
+      const targetMovies = 250;
+      const targetTVShows = 250;
+      const pagesNeeded = 15;
+      
+      const moviePromises = [];
+      const tvPromises = [];
+      
+      for (let page = 1; page <= pagesNeeded; page++) {
+        moviePromises.push(
+          fetch(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_companies=4&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+        tvPromises.push(
+          fetch(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=4330&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+      }
+      
+      const [movieResults, tvResults] = await Promise.all([Promise.all(moviePromises), Promise.all(tvPromises)]);
+      const allMovies = movieResults.flat();
+      const allTVShows = tvResults.flat();
+      
+      const processedMovies = allMovies.filter(movie => {
+        if (seenMovieIds.has(movie.id)) return false;
+        seenMovieIds.add(movie.id);
+        if (isAdultContent(movie)) return false;
+        return true;
+      }).slice(0, targetMovies).map(movie => ({
+        id: movie.id, title: movie.title, image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date ? new Date(movie.release_date).getFullYear() : "N/A",
+        type: "movie", overview: movie.overview, genre_ids: movie.genre_ids || [],
+      }));
+      
+      const processedTVShows = allTVShows.filter(show => {
+        if (seenTVIds.has(show.id)) return false;
+        seenTVIds.add(show.id);
+        if (isAdultContent(show)) return false;
+        return true;
+      }).slice(0, targetTVShows).map(show => ({
+        id: show.id, title: show.name, image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
+        type: "tv", overview: show.overview, genre_ids: show.genre_ids || [],
+      }));
+      
+      const currentYear = new Date().getFullYear();
+      const movieSections = [];
+      const tvSections = [];
+      
+      const trendingMovies = [...processedMovies].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingMovies.length > 0) movieSections.push({ id: "paramount_movie_trending", title: "Trending Movies", data: trendingMovies });
+      const newMovies = [...processedMovies].filter(m => m.year >= currentYear - 1).slice(0, 20);
+      if (newMovies.length > 0) movieSections.push({ id: "paramount_movie_new", title: "New Releases", data: newMovies });
+      const actionMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [28, 53].includes(g))).slice(0, 20);
+      if (actionMovies.length > 0) movieSections.push({ id: "paramount_movie_action", title: "Action & Thriller", data: actionMovies });
+      const comedyMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [35].includes(g))).slice(0, 20);
+      if (comedyMovies.length > 0) movieSections.push({ id: "paramount_movie_comedy", title: "Comedy", data: comedyMovies });
+      const dramaMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [18].includes(g))).slice(0, 20);
+      if (dramaMovies.length > 0) movieSections.push({ id: "paramount_movie_drama", title: "Drama", data: dramaMovies });
+      const scifiMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [878, 14].includes(g))).slice(0, 20);
+      if (scifiMovies.length > 0) movieSections.push({ id: "paramount_movie_scifi", title: "Sci-Fi & Fantasy", data: scifiMovies });
+      const familyMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [10751].includes(g))).slice(0, 20);
+      if (familyMovies.length > 0) movieSections.push({ id: "paramount_movie_family", title: "Family", data: familyMovies });
+      
+      const trendingTV = [...processedTVShows].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingTV.length > 0) tvSections.push({ id: "paramount_tv_trending", title: "Trending TV Shows", data: trendingTV });
+      const newTV = [...processedTVShows].filter(s => s.year >= currentYear - 1).slice(0, 20);
+      if (newTV.length > 0) tvSections.push({ id: "paramount_tv_new", title: "New Releases", data: newTV });
+      const dramaTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [18].includes(g))).slice(0, 20);
+      if (dramaTV.length > 0) tvSections.push({ id: "paramount_tv_drama", title: "Drama", data: dramaTV });
+      const crimeTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [80].includes(g))).slice(0, 20);
+      if (crimeTV.length > 0) tvSections.push({ id: "paramount_tv_crime", title: "Crime", data: crimeTV });
+      const scifiTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10765].includes(g))).slice(0, 20);
+      if (scifiTV.length > 0) tvSections.push({ id: "paramount_tv_scifi", title: "Sci-Fi & Fantasy", data: scifiTV });
+      const realityTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10764].includes(g))).slice(0, 20);
+      if (realityTV.length > 0) tvSections.push({ id: "paramount_tv_reality", title: "Reality", data: realityTV });
+      
+      return { sections: movieSections, movieSections, tvSections, totalMovies: processedMovies.length, totalTVShows: processedTVShows.length, totalContent: processedMovies.length + processedTVShows.length, hasTabs: true };
+    }
+
+    // Special handling for Apple TV+ - fetch 500 titles with tabs
+    if (franchise === "Apple TV+") {
+      const seenMovieIds = new Set();
+      const seenTVIds = new Set();
+      const targetMovies = 250;
+      const targetTVShows = 250;
+      const pagesNeeded = 15;
+      
+      const moviePromises = [];
+      const tvPromises = [];
+      
+      for (let page = 1; page <= pagesNeeded; page++) {
+        moviePromises.push(
+          fetch(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_companies=158414&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+        tvPromises.push(
+          fetch(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=2552&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+      }
+      
+      const [movieResults, tvResults] = await Promise.all([Promise.all(moviePromises), Promise.all(tvPromises)]);
+      const allMovies = movieResults.flat();
+      const allTVShows = tvResults.flat();
+      
+      const processedMovies = allMovies.filter(movie => {
+        if (seenMovieIds.has(movie.id)) return false;
+        seenMovieIds.add(movie.id);
+        if (isAdultContent(movie)) return false;
+        return true;
+      }).slice(0, targetMovies).map(movie => ({
+        id: movie.id, title: movie.title, image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date ? new Date(movie.release_date).getFullYear() : "N/A",
+        type: "movie", overview: movie.overview, genre_ids: movie.genre_ids || [],
+      }));
+      
+      const processedTVShows = allTVShows.filter(show => {
+        if (seenTVIds.has(show.id)) return false;
+        seenTVIds.add(show.id);
+        if (isAdultContent(show)) return false;
+        return true;
+      }).slice(0, targetTVShows).map(show => ({
+        id: show.id, title: show.name, image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
+        type: "tv", overview: show.overview, genre_ids: show.genre_ids || [],
+      }));
+      
+      const currentYear = new Date().getFullYear();
+      const movieSections = [];
+      const tvSections = [];
+      
+      const trendingMovies = [...processedMovies].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingMovies.length > 0) movieSections.push({ id: "apple_movie_trending", title: "Trending Movies", data: trendingMovies });
+      const newMovies = [...processedMovies].filter(m => m.year >= currentYear - 1).slice(0, 20);
+      if (newMovies.length > 0) movieSections.push({ id: "apple_movie_new", title: "New Releases", data: newMovies });
+      const dramaMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [18].includes(g))).slice(0, 20);
+      if (dramaMovies.length > 0) movieSections.push({ id: "apple_movie_drama", title: "Drama", data: dramaMovies });
+      const comedyMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [35].includes(g))).slice(0, 20);
+      if (comedyMovies.length > 0) movieSections.push({ id: "apple_movie_comedy", title: "Comedy", data: comedyMovies });
+      const scifiMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [878, 14].includes(g))).slice(0, 20);
+      if (scifiMovies.length > 0) movieSections.push({ id: "apple_movie_scifi", title: "Sci-Fi & Fantasy", data: scifiMovies });
+      const docMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [99].includes(g))).slice(0, 20);
+      if (docMovies.length > 0) movieSections.push({ id: "apple_movie_doc", title: "Documentaries", data: docMovies });
+      
+      const trendingTV = [...processedTVShows].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingTV.length > 0) tvSections.push({ id: "apple_tv_trending", title: "Trending TV Shows", data: trendingTV });
+      const newTV = [...processedTVShows].filter(s => s.year >= currentYear - 1).slice(0, 20);
+      if (newTV.length > 0) tvSections.push({ id: "apple_tv_new", title: "New Releases", data: newTV });
+      const dramaTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [18].includes(g))).slice(0, 20);
+      if (dramaTV.length > 0) tvSections.push({ id: "apple_tv_drama", title: "Drama", data: dramaTV });
+      const comedyTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [35].includes(g))).slice(0, 20);
+      if (comedyTV.length > 0) tvSections.push({ id: "apple_tv_comedy", title: "Comedy", data: comedyTV });
+      const scifiTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10765, 878].includes(g))).slice(0, 20);
+      if (scifiTV.length > 0) tvSections.push({ id: "apple_tv_scifi", title: "Sci-Fi & Fantasy", data: scifiTV });
+      const crimeTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [80].includes(g))).slice(0, 20);
+      if (crimeTV.length > 0) tvSections.push({ id: "apple_tv_crime", title: "Crime", data: crimeTV });
+      
+      return { sections: movieSections, movieSections, tvSections, totalMovies: processedMovies.length, totalTVShows: processedTVShows.length, totalContent: processedMovies.length + processedTVShows.length, hasTabs: true };
+    }
+
+    // Special handling for The CW - fetch 500 titles with tabs
+    if (franchise === "The CW") {
+      const seenMovieIds = new Set();
+      const seenTVIds = new Set();
+      const targetMovies = 100;
+      const targetTVShows = 400;
+      const pagesNeeded = 15;
+      
+      const moviePromises = [];
+      const tvPromises = [];
+      
+      for (let page = 1; page <= pagesNeeded; page++) {
+        moviePromises.push(
+          fetch(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_companies=1957&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+        tvPromises.push(
+          fetch(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=71&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+      }
+      
+      const [movieResults, tvResults] = await Promise.all([Promise.all(moviePromises), Promise.all(tvPromises)]);
+      const allMovies = movieResults.flat();
+      const allTVShows = tvResults.flat();
+      
+      const processedMovies = allMovies.filter(movie => {
+        if (seenMovieIds.has(movie.id)) return false;
+        seenMovieIds.add(movie.id);
+        if (isAdultContent(movie)) return false;
+        return true;
+      }).slice(0, targetMovies).map(movie => ({
+        id: movie.id, title: movie.title, image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date ? new Date(movie.release_date).getFullYear() : "N/A",
+        type: "movie", overview: movie.overview, genre_ids: movie.genre_ids || [],
+      }));
+      
+      const processedTVShows = allTVShows.filter(show => {
+        if (seenTVIds.has(show.id)) return false;
+        seenTVIds.add(show.id);
+        if (isAdultContent(show)) return false;
+        return true;
+      }).slice(0, targetTVShows).map(show => ({
+        id: show.id, title: show.name, image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
+        type: "tv", overview: show.overview, genre_ids: show.genre_ids || [],
+      }));
+      
+      const currentYear = new Date().getFullYear();
+      const movieSections = [];
+      const tvSections = [];
+      
+      const trendingMovies = [...processedMovies].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingMovies.length > 0) movieSections.push({ id: "cw_movie_trending", title: "Trending Movies", data: trendingMovies });
+      
+      const trendingTV = [...processedTVShows].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingTV.length > 0) tvSections.push({ id: "cw_tv_trending", title: "Trending TV Shows", data: trendingTV });
+      const newTV = [...processedTVShows].filter(s => s.year >= currentYear - 1).slice(0, 20);
+      if (newTV.length > 0) tvSections.push({ id: "cw_tv_new", title: "New Releases", data: newTV });
+      const dramaTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [18].includes(g))).slice(0, 20);
+      if (dramaTV.length > 0) tvSections.push({ id: "cw_tv_drama", title: "Drama", data: dramaTV });
+      const scifiTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10765, 878, 14].includes(g))).slice(0, 20);
+      if (scifiTV.length > 0) tvSections.push({ id: "cw_tv_scifi", title: "Sci-Fi & Fantasy", data: scifiTV });
+      const actionTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10759].includes(g))).slice(0, 20);
+      if (actionTV.length > 0) tvSections.push({ id: "cw_tv_action", title: "Action & Adventure", data: actionTV });
+      const mysteryTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [9648].includes(g))).slice(0, 20);
+      if (mysteryTV.length > 0) tvSections.push({ id: "cw_tv_mystery", title: "Mystery", data: mysteryTV });
+      
+      return { sections: movieSections.length > 0 ? movieSections : tvSections, movieSections, tvSections, totalMovies: processedMovies.length, totalTVShows: processedTVShows.length, totalContent: processedMovies.length + processedTVShows.length, hasTabs: true };
+    }
+
+    // Special handling for USA Network - fetch 500 titles with tabs
+    if (franchise === "USA Network") {
+      const seenMovieIds = new Set();
+      const seenTVIds = new Set();
+      const targetMovies = 100;
+      const targetTVShows = 400;
+      const pagesNeeded = 15;
+      
+      const moviePromises = [];
+      const tvPromises = [];
+      
+      for (let page = 1; page <= pagesNeeded; page++) {
+        moviePromises.push(
+          fetch(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_companies=26727&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+        tvPromises.push(
+          fetch(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=30&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+      }
+      
+      const [movieResults, tvResults] = await Promise.all([Promise.all(moviePromises), Promise.all(tvPromises)]);
+      const allMovies = movieResults.flat();
+      const allTVShows = tvResults.flat();
+      
+      const processedMovies = allMovies.filter(movie => {
+        if (seenMovieIds.has(movie.id)) return false;
+        seenMovieIds.add(movie.id);
+        if (isAdultContent(movie)) return false;
+        return true;
+      }).slice(0, targetMovies).map(movie => ({
+        id: movie.id, title: movie.title, image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date ? new Date(movie.release_date).getFullYear() : "N/A",
+        type: "movie", overview: movie.overview, genre_ids: movie.genre_ids || [],
+      }));
+      
+      const processedTVShows = allTVShows.filter(show => {
+        if (seenTVIds.has(show.id)) return false;
+        seenTVIds.add(show.id);
+        if (isAdultContent(show)) return false;
+        return true;
+      }).slice(0, targetTVShows).map(show => ({
+        id: show.id, title: show.name, image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
+        type: "tv", overview: show.overview, genre_ids: show.genre_ids || [],
+      }));
+      
+      const currentYear = new Date().getFullYear();
+      const movieSections = [];
+      const tvSections = [];
+      
+      const trendingMovies = [...processedMovies].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingMovies.length > 0) movieSections.push({ id: "usa_movie_trending", title: "Trending Movies", data: trendingMovies });
+      
+      const trendingTV = [...processedTVShows].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingTV.length > 0) tvSections.push({ id: "usa_tv_trending", title: "Trending TV Shows", data: trendingTV });
+      const newTV = [...processedTVShows].filter(s => s.year >= currentYear - 1).slice(0, 20);
+      if (newTV.length > 0) tvSections.push({ id: "usa_tv_new", title: "New Releases", data: newTV });
+      const dramaTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [18].includes(g))).slice(0, 20);
+      if (dramaTV.length > 0) tvSections.push({ id: "usa_tv_drama", title: "Drama", data: dramaTV });
+      const crimeTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [80].includes(g))).slice(0, 20);
+      if (crimeTV.length > 0) tvSections.push({ id: "usa_tv_crime", title: "Crime", data: crimeTV });
+      const actionTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10759].includes(g))).slice(0, 20);
+      if (actionTV.length > 0) tvSections.push({ id: "usa_tv_action", title: "Action & Adventure", data: actionTV });
+      const comedyTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [35].includes(g))).slice(0, 20);
+      if (comedyTV.length > 0) tvSections.push({ id: "usa_tv_comedy", title: "Comedy", data: comedyTV });
+      
+      return { sections: movieSections.length > 0 ? movieSections : tvSections, movieSections, tvSections, totalMovies: processedMovies.length, totalTVShows: processedTVShows.length, totalContent: processedMovies.length + processedTVShows.length, hasTabs: true };
+    }
+
+    // Special handling for ESPN - fetch sports content with tabs
+    if (franchise === "ESPN") {
+      const seenMovieIds = new Set();
+      const seenTVIds = new Set();
+      const targetMovies = 100;
+      const targetTVShows = 400;
+      const pagesNeeded = 15;
+      
+      const moviePromises = [];
+      const tvPromises = [];
+      
+      for (let page = 1; page <= pagesNeeded; page++) {
+        moviePromises.push(
+          fetch(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_keywords=6075&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+        tvPromises.push(
+          fetch(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_networks=29&sort_by=popularity.desc&page=${page}&include_adult=false`)
+            .then(res => res.json()).then(data => data.results || []).catch(() => [])
+        );
+      }
+      
+      const [movieResults, tvResults] = await Promise.all([Promise.all(moviePromises), Promise.all(tvPromises)]);
+      const allMovies = movieResults.flat();
+      const allTVShows = tvResults.flat();
+      
+      const processedMovies = allMovies.filter(movie => {
+        if (seenMovieIds.has(movie.id)) return false;
+        seenMovieIds.add(movie.id);
+        if (isAdultContent(movie)) return false;
+        return true;
+      }).slice(0, targetMovies).map(movie => ({
+        id: movie.id, title: movie.title, image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date ? new Date(movie.release_date).getFullYear() : "N/A",
+        type: "movie", overview: movie.overview, genre_ids: movie.genre_ids || [],
+      }));
+      
+      const processedTVShows = allTVShows.filter(show => {
+        if (seenTVIds.has(show.id)) return false;
+        seenTVIds.add(show.id);
+        if (isAdultContent(show)) return false;
+        return true;
+      }).slice(0, targetTVShows).map(show => ({
+        id: show.id, title: show.name, image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date ? new Date(show.first_air_date).getFullYear() : "N/A",
+        type: "tv", overview: show.overview, genre_ids: show.genre_ids || [],
+      }));
+      
+      const currentYear = new Date().getFullYear();
+      const movieSections = [];
+      const tvSections = [];
+      
+      const trendingMovies = [...processedMovies].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingMovies.length > 0) movieSections.push({ id: "espn_movie_trending", title: "Sports Movies", data: trendingMovies });
+      const docMovies = [...processedMovies].filter(m => m.genre_ids?.some(g => [99].includes(g))).slice(0, 20);
+      if (docMovies.length > 0) movieSections.push({ id: "espn_movie_doc", title: "Sports Documentaries", data: docMovies });
+      
+      const trendingTV = [...processedTVShows].sort((a, b) => parseFloat(b.rating) - parseFloat(a.rating)).slice(0, 20);
+      if (trendingTV.length > 0) tvSections.push({ id: "espn_tv_trending", title: "Trending Shows", data: trendingTV });
+      const newTV = [...processedTVShows].filter(s => s.year >= currentYear - 1).slice(0, 20);
+      if (newTV.length > 0) tvSections.push({ id: "espn_tv_new", title: "New Shows", data: newTV });
+      const docTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [99].includes(g))).slice(0, 20);
+      if (docTV.length > 0) tvSections.push({ id: "espn_tv_doc", title: "Documentaries", data: docTV });
+      const talkTV = [...processedTVShows].filter(s => s.genre_ids?.some(g => [10767].includes(g))).slice(0, 20);
+      if (talkTV.length > 0) tvSections.push({ id: "espn_tv_talk", title: "Talk Shows", data: talkTV });
+      
+      return { sections: movieSections.length > 0 ? movieSections : tvSections, movieSections, tvSections, totalMovies: processedMovies.length, totalTVShows: processedTVShows.length, totalContent: processedMovies.length + processedTVShows.length, hasTabs: true };
+    }
+
+
+        // Filter movies - remove adult content and unrelated content
     const filteredMovies = movies.filter(movie => {
       const titleLower = (movie.title || '').toLowerCase();
       const overviewLower = (movie.overview || '').toLowerCase();
@@ -3879,5 +5520,105 @@ export const fetchStructuredFranchiseContent = async (franchise) => {
   } catch (error) {
     console.error("Error fetching structured franchise content:", error);
     return { sections: [] };
+  }
+};
+
+// Fetch category content with pagination (for "See All" pages)
+// Fetches up to 500 titles for a specific category
+export const fetchCategoryContent = async (categoryId, categoryType = 'mixed', page = 1, pagesPerLoad = 25) => {
+  try {
+    const results = [];
+    const startPage = (page - 1) * pagesPerLoad + 1;
+    const endPage = startPage + pagesPerLoad - 1;
+    const maxPage = 25; // TMDB limits to 500 results (25 pages * 20 per page)
+    
+    const actualEndPage = Math.min(endPage, maxPage);
+    
+    // Category mapping for different content types
+    const categoryMap = {
+      // Movies
+      'now_playing': { endpoint: 'movie/now_playing', type: 'movie' },
+      'upcoming': { endpoint: 'movie/upcoming', type: 'movie' },
+      'top_rated_movies': { endpoint: 'movie/top_rated', type: 'movie' },
+      'popular_movies': { endpoint: 'movie/popular', type: 'movie' },
+      // TV Shows
+      'airing_today': { endpoint: 'tv/airing_today', type: 'tv' },
+      'on_the_air': { endpoint: 'tv/on_the_air', type: 'tv' },
+      'top_rated_tv': { endpoint: 'tv/top_rated', type: 'tv' },
+      'popular_tv': { endpoint: 'tv/popular', type: 'tv' },
+      // Genres (movies)
+      'action': { endpoint: 'discover/movie', type: 'movie', genreId: 28 },
+      'comedy': { endpoint: 'discover/movie', type: 'movie', genreId: 35 },
+      'horror': { endpoint: 'discover/movie', type: 'movie', genreId: 27 },
+      'romance': { endpoint: 'discover/movie', type: 'movie', genreId: 10749 },
+      'thriller': { endpoint: 'discover/movie', type: 'movie', genreId: 53 },
+      'sci_fi': { endpoint: 'discover/movie', type: 'movie', genreId: 878 },
+      // Genres (TV)
+      'drama': { endpoint: 'discover/tv', type: 'tv', genreId: 18 },
+      'crime': { endpoint: 'discover/tv', type: 'tv', genreId: 80 },
+      'mystery': { endpoint: 'discover/tv', type: 'tv', genreId: 9648 },
+      'animation': { endpoint: 'discover/tv', type: 'tv', genreId: 16 },
+      // Anime
+      'anime': { endpoint: 'discover/tv', type: 'tv', genreId: 16, originCountry: 'JP' },
+    };
+    
+    const config = categoryMap[categoryId];
+    if (!config) {
+      console.warn(`Unknown category: ${categoryId}`);
+      return { results: [], hasMore: false };
+    }
+    
+    const pagePromises = [];
+    for (let p = startPage; p <= actualEndPage; p++) {
+      let url = `${BASE_URL}/${config.endpoint}?api_key=${API_KEY}&page=${p}&sort_by=popularity.desc`;
+      
+      if (config.genreId) {
+        url += `&with_genres=${config.genreId}`;
+      }
+      if (config.originCountry) {
+        url += `&with_origin_country=${config.originCountry}`;
+      }
+      
+      pagePromises.push(
+        fetch(url)
+          .then(res => safeJsonParse(res))
+          .catch(() => ({ results: [] }))
+      );
+    }
+    
+    const responses = await Promise.all(pagePromises);
+    
+    responses.forEach(data => {
+      if (data.results) {
+        const mapped = data.results.map(item => ({
+          id: item.id,
+          title: item.title || item.name,
+          image: getImageUrl(item.poster_path, "w342"),
+          backdrop: getBackdropUrl(item.backdrop_path, "w780"),
+          rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
+          year: item.release_date
+            ? new Date(item.release_date).getFullYear()
+            : item.first_air_date
+              ? new Date(item.first_air_date).getFullYear()
+              : "N/A",
+          type: config.type,
+          overview: item.overview,
+        }));
+        results.push(...mapped);
+      }
+    });
+    
+    // Remove duplicates
+    const uniqueResults = Array.from(
+      new Map(results.map(item => [item.id, item])).values()
+    );
+    
+    return {
+      results: uniqueResults,
+      hasMore: actualEndPage < maxPage,
+    };
+  } catch (error) {
+    console.error("Error fetching category content:", error);
+    return { results: [], hasMore: false };
   }
 };

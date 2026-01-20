@@ -13,7 +13,17 @@ import ShowDetailsScreen from "../screens/ShowDetailsScreen";
 import SearchScreen from "../screens/SearchScreen";
 import MyListScreen from "../screens/MyListScreen";
 import FranchiseScreen from "../screens/FranchiseScreen";
+import FranchiseCategoryScreen from "../screens/FranchiseCategoryScreen";
+import NetflixScreen from "../screens/NetflixScreen";
+import MaxScreen from "../screens/MaxScreen";
+import AppleTVScreen from "../screens/AppleTVScreen";
+import DisneyPlusScreen from "../screens/DisneyPlusScreen";
+import ParamountScreen from "../screens/ParamountScreen";
+import ESPNScreen from "../screens/ESPNScreen";
+import USANetworkScreen from "../screens/USANetworkScreen";
+import TheCWScreen from "../screens/TheCWScreen";
 import VideoPlayerScreen from "../screens/VideoPlayerScreen";
+import CategoryContentScreen from "../screens/CategoryContentScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -79,6 +89,16 @@ const AppNavigator = () => {
             <Stack.Screen name="Search" component={SearchScreen} />
             <Stack.Screen name="MyList" component={MyListScreen} />
             <Stack.Screen name="Franchise" component={FranchiseScreen} />
+            <Stack.Screen name="Netflix" component={NetflixScreen} />
+            <Stack.Screen name="Max" component={MaxScreen} />
+            <Stack.Screen name="AppleTV" component={AppleTVScreen} />
+            <Stack.Screen name="DisneyPlus" component={DisneyPlusScreen} />
+            <Stack.Screen name="Paramount" component={ParamountScreen} />
+            <Stack.Screen name="ESPN" component={ESPNScreen} />
+            <Stack.Screen name="USANetwork" component={USANetworkScreen} />
+            <Stack.Screen name="TheCW" component={TheCWScreen} />
+            <Stack.Screen name="FranchiseCategory" component={FranchiseCategoryScreen} />
+            <Stack.Screen name="CategoryContent" component={CategoryContentScreen} />
             <Stack.Screen
               name="VideoPlayer"
               component={VideoPlayerScreen}

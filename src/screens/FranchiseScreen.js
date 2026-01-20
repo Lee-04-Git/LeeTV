@@ -1,16 +1,20 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   Image,
   ActivityIndicator,
   FlatList,
   Dimensions,
+  StatusBar,
+  ImageBackground,
+  TextInput,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
 import colors from "../constants/colors";
 import { BackIcon } from "../components/Icons";
 import {
@@ -30,18 +34,146 @@ import {
   fetchStructuredFranchiseContent,
 } from "../services/tmdbApi";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const HERO_HEIGHT = SCREEN_HEIGHT * 0.32;
+const CARD_WIDTH = SCREEN_WIDTH * 0.32;
+const CARD_HEIGHT = CARD_WIDTH * 1.5;
+
+// Franchise logos and hero images
+const FRANCHISE_ASSETS = {
+  Marvel: {
+    logo: require("../../assets/marvel.png"),
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/7RyHsO4yDXtBv1zUU3mTpHeQ0d5.jpg", // Avengers Endgame
+      "https://image.tmdb.org/t/p/original/orjiB3oUIsyz60hoEqkiGpy5CeO.jpg", // Infinity War
+    ],
+  },
+  "Star Wars": {
+    logo: require("../../assets/star-wars.png"),
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/d9CqJnrSgLfkdqHoHOQbn0eRSgr.jpg",
+    ],
+  },
+  DC: {
+    logo: require("../../assets/dc.jpg"),
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/jRXYjXNq0Cs2TcJjLkki24MLp7u.jpg",
+    ],
+  },
+  Disney: {
+    logo: require("../../assets/new-disneyplus-icon.jpg"),
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/tNCbisMxO5mX2X7HfNmhJlNsQgc.jpg",
+    ],
+  },
+  "Disney+": {
+    logo: require("../../assets/new-disneyplus-icon.jpg"),
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/tNCbisMxO5mX2X7HfNmhJlNsQgc.jpg",
+    ],
+  },
+  Netflix: {
+    logo: require("../../assets/netflix-icon-logo.jpg"),
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/56v2KjBlU4XaOv9rVYEQypROD7P.jpg",
+    ],
+  },
+  "HBO Max": {
+    logo: require("../../assets/max.jpg"),
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/rzdPqYx7Um4FUZeD8wpXqjAUcEm.jpg",
+    ],
+  },
+  Max: {
+    logo: require("../../assets/max.jpg"),
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/rzdPqYx7Um4FUZeD8wpXqjAUcEm.jpg",
+    ],
+  },
+  Anime: {
+    logo: require("../../assets/anime.png"),
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/9PFonBhy4cQy7Jz20NpMygczOkv.jpg",
+    ],
+  },
+  Hulu: {
+    logo: require("../../assets/hulu.png"),
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/56v2KjBlU4XaOv9rVYEQypROD7P.jpg",
+    ],
+  },
+  "Paramount+": {
+    logo: require("../../assets/paramount-plus-logo-icon.png"),
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/56v2KjBlU4XaOv9rVYEQypROD7P.jpg",
+    ],
+  },
+  "Apple TV+": {
+    logo: require("../../assets/apple-tv-icon-logo.jpg"),
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/56v2KjBlU4XaOv9rVYEQypROD7P.jpg",
+    ],
+  },
+  "Harry Potter": {
+    textLogo: "Harry Potter",
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/hziiv14OpD73u9gAak4XDDfBKa2.jpg", // Deathly Hallows
+    ],
+  },
+  "Transformers": {
+    remoteLogo: "https://image.tmdb.org/t/p/original/eOEQlOCaUCedkjzJD0GlmLWqsAL.jpg", // Transformers collection poster
+    heroImages: [
+      "https://image.tmdb.org/t/p/original/bX2xnavhMYjWDoZp1VM6VnU1xwe.jpg", // Transformers backdrop
+    ],
+  },
+};
 
 const FranchiseScreen = ({ navigation, route }) => {
   const { franchise } = route.params || {};
+  
+  // Redirect to dedicated screens
+  useEffect(() => {
+    if (franchise === "Netflix" || franchise === "Netflix Originals") {
+      navigation.replace("Netflix");
+    } else if (franchise === "HBO Max" || franchise === "Max") {
+      navigation.replace("Max");
+    } else if (franchise === "Apple TV+") {
+      navigation.replace("AppleTV");
+    } else if (franchise === "Disney+" || franchise === "Disney") {
+      navigation.replace("DisneyPlus");
+    } else if (franchise === "Paramount+") {
+      navigation.replace("Paramount");
+    } else if (franchise === "ESPN") {
+      navigation.replace("ESPN");
+    } else if (franchise === "USA Network") {
+      navigation.replace("USANetwork");
+    } else if (franchise === "The CW") {
+      navigation.replace("TheCW");
+    }
+  }, [franchise, navigation]);
+  
   const [movies, setMovies] = useState([]);
   const [tvShows, setTVShows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTab, setSelectedTab] = useState("All");
+  const [heroBackdrop, setHeroBackdrop] = useState(null);
 
   // Structured content state for row-based layout
   const [structuredContent, setStructuredContent] = useState(null);
   const [useStructuredLayout, setUseStructuredLayout] = useState(false);
+  
+  // Combined sections state for streaming services
+  const [movieSections, setMovieSections] = useState([]);
+  const [tvSections, setTVSections] = useState([]);
+  const [hasTabs, setHasTabs] = useState(false);
+  const [totalContent, setTotalContent] = useState(0);
+  const [contentTab, setContentTab] = useState("Movies"); // Movies or TV Shows
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [allContent, setAllContent] = useState([]); // Store all content for searching
 
   // Pagination state for lazy loading franchises
   const [currentPage, setCurrentPage] = useState(1);
@@ -62,6 +194,14 @@ const FranchiseScreen = ({ navigation, route }) => {
     "HBO Max",
     "Max",
     "Anime",
+    "Harry Potter",
+    "Transformers",
+    "Hulu",
+    "Paramount+",
+    "Apple TV+",
+    "The CW",
+    "USA Network",
+    "ESPN",
   ];
 
   // Check if franchise uses structured layout
@@ -76,6 +216,9 @@ const FranchiseScreen = ({ navigation, route }) => {
       franchise === "USA Network" ||
       franchise === "The CW" ||
       franchise === "ESPN");
+
+  // Get franchise assets
+  const franchiseAssets = FRANCHISE_ASSETS[franchise] || {};
 
   useEffect(() => {
     if (supportsStructuredLayout) {
@@ -94,8 +237,32 @@ const FranchiseScreen = ({ navigation, route }) => {
       if (content && content.sections && content.sections.length > 0) {
         setStructuredContent(content);
         setUseStructuredLayout(true);
+        
+        // Check if this franchise has tabs (Netflix, Disney+)
+        if (content.hasTabs) {
+          setHasTabs(true);
+          // Skip first 3 rows (All Movies, Top Rated, New Releases)
+          const filteredMovieSections = (content.movieSections || []).slice(3);
+          const filteredTVSections = (content.tvSections || []).slice(3);
+          setMovieSections(filteredMovieSections);
+          setTVSections(filteredTVSections);
+          setTotalContent(content.totalContent || 0);
+          setContentTab("Movies"); // Default to Movies tab
+          
+          // Store all content for search
+          const allMovies = content.movieSections?.[0]?.data || [];
+          const allTV = content.tvSections?.[0]?.data || [];
+          setAllContent([...allMovies, ...allTV]);
+        }
+        
+        // Set hero backdrop from first content item
+        const firstSection = content.sections[0];
+        if (firstSection?.data?.[0]?.backdrop) {
+          setHeroBackdrop(firstSection.data[0].backdrop);
+        } else if (franchiseAssets.heroImages?.[0]) {
+          setHeroBackdrop(franchiseAssets.heroImages[0]);
+        }
       } else {
-        // Fallback to paginated loading if structured content fails
         loadPaginatedContent(1, true);
       }
     } catch (error) {
@@ -113,7 +280,6 @@ const FranchiseScreen = ({ navigation, route }) => {
       setCurrentPage(1);
       setHasMore(true);
       setUseStructuredLayout(false);
-      // Set target count based on franchise
       if (franchise === "Hulu") {
         setTargetCount(200);
       } else if (franchise === "Paramount+") {
@@ -152,6 +318,9 @@ const FranchiseScreen = ({ navigation, route }) => {
       if (data) {
         if (isInitial) {
           setPaginatedContent(data.results);
+          if (data.results[0]?.backdrop) {
+            setHeroBackdrop(data.results[0].backdrop);
+          }
         } else {
           setPaginatedContent((prev) => {
             const existingIds = new Set(prev.map((item) => item.id));
@@ -163,19 +332,13 @@ const FranchiseScreen = ({ navigation, route }) => {
         }
 
         let maxCount = 500;
-        if (franchise === "Hulu") {
-          maxCount = 200;
-        } else if (franchise === "Paramount+") {
-          maxCount = 150;
-        } else if (franchise === "Apple TV+") {
-          maxCount = 233;
-        } else if (franchise === "USA Network") {
-          maxCount = 166;
-        } else if (franchise === "The CW") {
-          maxCount = 182;
-        } else if (franchise === "ESPN") {
-          maxCount = 102;
-        }
+        if (franchise === "Hulu") maxCount = 200;
+        else if (franchise === "Paramount+") maxCount = 150;
+        else if (franchise === "Apple TV+") maxCount = 233;
+        else if (franchise === "USA Network") maxCount = 166;
+        else if (franchise === "The CW") maxCount = 182;
+        else if (franchise === "ESPN") maxCount = 102;
+        
         setHasMore(page < data.totalPages && paginatedContent.length < maxCount);
         setCurrentPage(page);
       }
@@ -193,6 +356,9 @@ const FranchiseScreen = ({ navigation, route }) => {
       const { movies, tvShows } = await fetchFranchiseContent(franchise);
       setMovies(movies);
       setTVShows(tvShows);
+      if (movies[0]?.backdrop) {
+        setHeroBackdrop(movies[0].backdrop);
+      }
     } catch (error) {
       console.error("Error loading franchise content:", error);
     } finally {
@@ -207,75 +373,113 @@ const FranchiseScreen = ({ navigation, route }) => {
   }, [usesLazyLoading, loadingMore, hasMore, currentPage, useStructuredLayout]);
 
   const getDisplayContent = () => {
-    if (useStructuredLayout) {
-      return []; // Structured layout uses sections, not flat list
-    }
-    if (usesLazyLoading) {
-      return paginatedContent;
-    }
+    if (useStructuredLayout) return [];
+    if (usesLazyLoading) return paginatedContent;
     if (selectedTab === "Movies") return movies;
     if (selectedTab === "TV Shows") return tvShows;
     return [...movies, ...tvShows];
   };
 
   const handleContentPress = (item) => {
-    navigation.navigate("ShowDetails", {
-      show: item,
+    navigation.navigate("ShowDetails", { show: item });
+  };
+
+  const handleSeeMore = (section) => {
+    navigation.navigate("FranchiseCategory", {
+      title: section.title,
+      data: section.data,
+      franchise: franchise,
     });
   };
 
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => handleContentPress(item)}
-    >
-      <Image
-        source={{ uri: item.image }}
-        style={styles.poster}
-        resizeMode="cover"
-      />
-      <View style={styles.cardInfo}>
-        <Text style={styles.cardTitle} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <View style={styles.cardMeta}>
-          <Text style={styles.cardYear}>{item.year}</Text>
-          <Text style={styles.cardRating}>⭐ {item.rating}</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+  // Search functionality
+  const handleSearchChange = (text) => {
+    setSearchQuery(text);
+    if (text.trim().length > 0) {
+      const query = text.toLowerCase();
+      const results = allContent.filter(item => 
+        item.title?.toLowerCase().includes(query)
+      ).slice(0, 8);
+      setSearchResults(results);
+      setShowSearchDropdown(results.length > 0);
+    } else {
+      setSearchResults([]);
+      setShowSearchDropdown(false);
+    }
+  };
 
-  // Row item for structured layout
+  const handleSearchResultPress = (item) => {
+    setSearchQuery("");
+    setSearchResults([]);
+    setShowSearchDropdown(false);
+    navigation.navigate("ShowDetails", { show: item });
+  };
+
+  const handleSearchSubmit = () => {
+    if (searchResults.length > 0) {
+      handleSearchResultPress(searchResults[0]);
+    }
+  };
+
+  // Card component for horizontal rows
   const renderRowItem = ({ item }) => (
     <TouchableOpacity
       style={styles.rowCard}
       onPress={() => handleContentPress(item)}
+      activeOpacity={0.8}
     >
       <Image
         source={{ uri: item.image }}
         style={styles.rowPoster}
         resizeMode="cover"
       />
-      <Text style={styles.rowCardTitle} numberOfLines={2}>
-        {item.title}
-      </Text>
     </TouchableOpacity>
   );
 
-  // Section component for structured layout
-  const renderSection = (section) => (
-    <View key={section.id} style={styles.sectionContainer}>
-      <Text style={styles.sectionTitle}>{section.title}</Text>
-      <FlatList
-        data={section.data}
-        renderItem={renderRowItem}
-        keyExtractor={(item) => `${section.id}-${item.type}-${item.id}`}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.rowContent}
+  // Section component for structured layout with See More
+  const renderSection = (section) => {
+    if (!section.data || section.data.length === 0) return null;
+    
+    return (
+      <View key={section.id} style={styles.sectionContainer}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{section.title}</Text>
+          {section.data.length > 5 && (
+            <TouchableOpacity 
+              style={styles.seeMoreBtn} 
+              onPress={() => handleSeeMore(section)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.seeMoreText}>See All</Text>
+              <BackIcon size={14} color="#37d1e4" style={{ transform: [{ rotate: '180deg' }] }} />
+            </TouchableOpacity>
+          )}
+        </View>
+        <FlatList
+          data={section.data.slice(0, 15)}
+          renderItem={renderRowItem}
+          keyExtractor={(item) => `${section.id}-${item.type}-${item.id}`}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.rowContent}
+        />
+      </View>
+    );
+  };
+
+  // Grid item for non-structured layout
+  const renderGridItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.gridCard}
+      onPress={() => handleContentPress(item)}
+      activeOpacity={0.8}
+    >
+      <Image
+        source={{ uri: item.image }}
+        style={styles.gridPoster}
+        resizeMode="cover"
       />
-    </View>
+    </TouchableOpacity>
   );
 
   const renderFooter = () => {
@@ -283,89 +487,179 @@ const FranchiseScreen = ({ navigation, route }) => {
     return (
       <View style={styles.footerLoader}>
         <ActivityIndicator size="small" color={colors.primary} />
-        <Text style={styles.loadingMoreText}>Loading more...</Text>
+      </View>
+    );
+  };
+
+  // Hero Banner Component
+  const renderHeroBanner = () => {
+    const backdropUrl = heroBackdrop || franchiseAssets.heroImages?.[0] || null;
+    
+    return (
+      <View style={styles.heroContainer}>
+        {backdropUrl ? (
+          <ImageBackground
+            source={{ uri: backdropUrl }}
+            style={styles.heroBackground}
+            resizeMode="cover"
+          >
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.8)', colors.background]}
+              style={styles.heroGradient}
+            >
+              {/* Back Button */}
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}
+              >
+                <BackIcon size={22} color={colors.white} />
+              </TouchableOpacity>
+              
+              {/* Franchise Logo */}
+              {franchiseAssets.logo ? (
+                <View style={styles.logoContainer}>
+                  <Image
+                    source={franchiseAssets.logo}
+                    style={styles.franchiseLogo}
+                    resizeMode="contain"
+                  />
+                </View>
+              ) : franchiseAssets.remoteLogo ? (
+                <View style={styles.logoContainer}>
+                  <Image
+                    source={{ uri: franchiseAssets.remoteLogo }}
+                    style={styles.franchiseRemoteLogo}
+                    resizeMode="contain"
+                  />
+                </View>
+              ) : franchiseAssets.textLogo ? (
+                <View style={styles.logoContainer}>
+                  <Text style={styles.franchiseTitle}>{franchiseAssets.textLogo}</Text>
+                </View>
+              ) : null}
+            </LinearGradient>
+          </ImageBackground>
+        ) : (
+          <View style={[styles.heroBackground, styles.heroPlaceholder]}>
+            <LinearGradient
+              colors={['rgba(30,30,30,1)', colors.background]}
+              style={styles.heroGradient}
+            >
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => navigation.goBack()}
+              >
+                <BackIcon size={22} color={colors.white} />
+              </TouchableOpacity>
+              
+              <View style={styles.logoContainer}>
+                <Text style={styles.franchiseTitle}>{franchise}</Text>
+              </View>
+            </LinearGradient>
+          </View>
+        )}
       </View>
     );
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <BackIcon size={24} color={colors.white} />
-        </TouchableOpacity>
-        <Text style={styles.title}>{franchise || "Franchise"}</Text>
-        {usesLazyLoading && !useStructuredLayout && (
-          <Text style={styles.countText}>{paginatedContent.length} titles</Text>
-        )}
-      </View>
-
-      {/* Tab Selector - hide for lazy loading and structured franchises */}
-      {!usesLazyLoading && !useStructuredLayout && (
-        <View style={styles.tabContainer}>
-          {["All", "Movies", "TV Shows"].map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={[styles.tab, selectedTab === tab && styles.activeTab]}
-              onPress={() => setSelectedTab(tab)}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  selectedTab === tab && styles.activeTabText,
-                ]}
-              >
-                {tab}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-
+    <View style={styles.container}>
+      <StatusBar translucent backgroundColor="transparent" barStyle="light-content" />
+      
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading {franchise} content...</Text>
         </View>
       ) : useStructuredLayout && structuredContent ? (
-        // Structured row-based layout
-        <ScrollView
-          style={styles.scrollView}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.structuredContent}
-        >
-          {structuredContent.sections.map(renderSection)}
-        </ScrollView>
+        <View style={{ flex: 1 }}>
+          <ScrollView
+            style={styles.scrollView}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {renderHeroBanner()}
+            <View style={styles.contentContainer}>
+              {/* Search Bar for Netflix and streaming services */}
+              {hasTabs && (
+                <View style={styles.searchContainer}>
+                  <View style={styles.searchBox}>
+                    <Ionicons name="search" size={18} color="#666" />
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder={`Search in ${franchise}...`}
+                      placeholderTextColor="#555"
+                      value={searchQuery}
+                      onChangeText={handleSearchChange}
+                      onSubmitEditing={handleSearchSubmit}
+                      returnKeyType="search"
+                    />
+                    {searchQuery.length > 0 && (
+                      <TouchableOpacity onPress={() => { setSearchQuery(""); setSearchResults([]); setShowSearchDropdown(false); }}>
+                        <Ionicons name="close-circle" size={18} color="#555" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  {/* Search Dropdown */}
+                  {showSearchDropdown && (
+                    <View style={styles.searchDropdown}>
+                      {searchResults.map((item, index) => (
+                        <TouchableOpacity
+                          key={`search-${item.id}-${index}`}
+                          style={styles.searchResultItem}
+                          onPress={() => handleSearchResultPress(item)}
+                          activeOpacity={0.7}
+                        >
+                          <Image source={{ uri: item.image }} style={styles.searchResultImage} />
+                          <View style={styles.searchResultInfo}>
+                            <Text style={styles.searchResultTitle} numberOfLines={1}>{item.title}</Text>
+                            <Text style={styles.searchResultMeta}>{item.year} | {item.type === 'tv' ? 'Series' : 'Film'}</Text>
+                          </View>
+                          <Ionicons name="chevron-forward" size={16} color="#555" />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+              {/* Total content count */}
+              {hasTabs && totalContent > 0 && (
+                <Text style={styles.totalCountText}>
+                  {totalContent} titles available
+                </Text>
+              )}
+              {/* Render all sections combined */}
+              {hasTabs
+                ? [...movieSections, ...tvSections].map(renderSection)
+                : structuredContent.sections.map(renderSection)
+              }
+            </View>
+          </ScrollView>
+        </View>
       ) : (
-        // Grid layout for non-structured franchises
         <FlatList
           data={getDisplayContent()}
-          renderItem={renderItem}
+          renderItem={renderGridItem}
           keyExtractor={(item) => `${item.type}-${item.id}`}
-          numColumns={4}
-          contentContainerStyle={styles.flatListContent}
+          numColumns={3}
+          ListHeaderComponent={renderHeroBanner}
+          contentContainerStyle={styles.gridContent}
           columnWrapperStyle={styles.columnWrapper}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>
-                No {selectedTab.toLowerCase()} content available for {franchise}
+                No content available for {franchise}
               </Text>
             </View>
           }
           ListFooterComponent={renderFooter}
           onEndReached={handleLoadMore}
           onEndReachedThreshold={0.5}
-          initialNumToRender={16}
-          maxToRenderPerBatch={16}
-          windowSize={5}
-          removeClippedSubviews={true}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -374,57 +668,128 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+  // Hero Banner Styles
+  heroContainer: {
+    width: SCREEN_WIDTH,
+    height: HERO_HEIGHT,
+  },
+  heroBackground: {
+    width: '100%',
+    height: '100%',
+  },
+  heroPlaceholder: {
+    backgroundColor: '#1a1a1a',
+  },
+  heroGradient: {
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingTop: StatusBar.currentHeight || 44,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
+    marginLeft: 16,
+    marginTop: 8,
   },
-  title: {
+  logoContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingBottom: 20,
+  },
+  franchiseLogo: {
+    width: SCREEN_WIDTH * 0.4,
+    height: 60,
+  },
+  franchiseRemoteLogo: {
+    width: SCREEN_WIDTH * 0.35,
+    height: 120,
+    borderRadius: 8,
+  },
+  franchiseTitle: {
     color: colors.white,
-    fontSize: 24,
-    fontWeight: "bold",
-    letterSpacing: 0.5,
+    fontSize: 32,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  // Content Styles
+  scrollView: {
     flex: 1,
   },
-  countText: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 14,
+  contentContainer: {
+    paddingBottom: 30,
   },
-  tabContainer: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    gap: 10,
+  // Content count style
+  totalCountText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
-  tab: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  // Section Styles
+  sectionContainer: {
+    marginTop: 24,
   },
-  activeTab: {
-    backgroundColor: colors.primary,
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
-  tabText: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 14,
+  sectionTitle: {
+    color: colors.white,
+    fontSize: 16,
     fontWeight: "600",
   },
-  activeTabText: {
-    color: colors.white,
+  seeMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
+  seeMoreText: {
+    color: '#37d1e4',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  rowContent: {
+    paddingHorizontal: 16,
+  },
+  rowCard: {
+    marginRight: 10,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  rowPoster: {
+    width: CARD_WIDTH,
+    height: CARD_HEIGHT,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  },
+  // Grid Styles (for non-structured franchises)
+  gridContent: {
+    paddingBottom: 30,
+  },
+  columnWrapper: {
+    paddingHorizontal: 8,
+    justifyContent: 'flex-start',
+  },
+  gridCard: {
+    flex: 1,
+    maxWidth: '33.33%',
+    padding: 4,
+  },
+  gridPoster: {
+    width: '100%',
+    aspectRatio: 2 / 3,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  },
+  // Loading & Empty States
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -434,48 +799,6 @@ const styles = StyleSheet.create({
     color: colors.white,
     marginTop: 15,
     fontSize: 16,
-  },
-  // Grid layout styles
-  flatListContent: {
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-  },
-  columnWrapper: {
-    justifyContent: "flex-start",
-  },
-  card: {
-    width: "23%",
-    marginHorizontal: "1%",
-    marginBottom: 16,
-  },
-  poster: {
-    width: "100%",
-    aspectRatio: 2 / 3,
-    borderRadius: 6,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-  },
-  cardInfo: {
-    marginTop: 6,
-  },
-  cardTitle: {
-    color: colors.white,
-    fontSize: 11,
-    fontWeight: "600",
-    marginBottom: 2,
-  },
-  cardMeta: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  cardYear: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 10,
-  },
-  cardRating: {
-    color: colors.primary,
-    fontSize: 10,
-    fontWeight: "600",
   },
   emptyContainer: {
     flex: 1,
@@ -489,53 +812,68 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   footerLoader: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
     paddingVertical: 20,
-    gap: 10,
+    alignItems: 'center',
   },
-  loadingMoreText: {
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 14,
+  // Search Styles
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    zIndex: 100,
   },
-  // Structured row layout styles
-  scrollView: {
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0a1929',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  searchInput: {
     flex: 1,
-  },
-  structuredContent: {
-    paddingBottom: 20,
-  },
-  sectionContainer: {
-    marginTop: 20,
-  },
-  sectionTitle: {
     color: colors.white,
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 12,
-    paddingHorizontal: 16,
+    fontSize: 15,
+    padding: 0,
   },
-  rowContent: {
-    paddingHorizontal: 16,
-    gap: 10,
+  searchDropdown: {
+    position: 'absolute',
+    top: 60,
+    left: 16,
+    right: 16,
+    backgroundColor: '#0a1929',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(55, 209, 228, 0.3)',
+    overflow: 'hidden',
+    zIndex: 101,
   },
-  rowCard: {
-    width: 120,
-    marginRight: 10,
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
-  rowPoster: {
-    width: 120,
-    height: 180,
-    borderRadius: 6,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  searchResultImage: {
+    width: 40,
+    height: 60,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
   },
-  rowCardTitle: {
+  searchResultInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  searchResultTitle: {
     color: colors.white,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  searchResultMeta: {
+    color: 'rgba(255, 255, 255, 0.5)',
     fontSize: 12,
-    fontWeight: "500",
-    marginTop: 6,
-    textAlign: "center",
+    marginTop: 2,
   },
 });
 
