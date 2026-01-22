@@ -1,9 +1,7 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "../config/firebase";
 
 import AuthScreen from "../screens/AuthScreen";
 import UserProfileScreen from "../screens/UserProfileScreen";
@@ -18,31 +16,7 @@ import CategoryContentScreen from "../screens/CategoryContentScreen";
 const Stack = createNativeStackNavigator();
 
 const AppNavigator = () => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (authUser) => {
-      setUser(authUser);
-      setLoading(false);
-    });
-    return unsubscribe;
-  }, []);
-
-  if (loading) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: "#000",
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <ActivityIndicator size="large" color="#E50914" />
-      </View>
-    );
-  }
+  const [loading, setLoading] = useState(false);
 
   return (
     <NavigationContainer>
@@ -54,47 +28,42 @@ const AppNavigator = () => {
           animationDuration: 300,
         }}
       >
-        {user ? (
-          <>
-            <Stack.Screen
-              name="UserProfile"
-              component={UserProfileScreen}
-              options={{ animation: "fade" }}
-            />
-            <Stack.Screen
-              name="EditProfile"
-              component={EditProfileScreen}
-              options={{ animation: "slide_from_right" }}
-            />
-            <Stack.Screen
-              name="Home"
-              component={HomeScreen}
-              options={{ animation: "fade" }}
-            />
-            <Stack.Screen
-              name="ShowDetails"
-              component={ShowDetailsScreen}
-              options={{ animation: "slide_from_bottom" }}
-            />
-            <Stack.Screen name="Search" component={SearchScreen} />
-            <Stack.Screen name="MyList" component={MyListScreen} />
-            <Stack.Screen name="CategoryContent" component={CategoryContentScreen} />
-            <Stack.Screen
-              name="VideoPlayer"
-              component={VideoPlayerScreen}
-              options={{
-                animation: "slide_from_bottom",
-                presentation: "fullScreenModal",
-              }}
-            />
-          </>
-        ) : (
-          <Stack.Screen
-            name="Auth"
-            component={AuthScreen}
-            options={{ animation: "fade" }}
-          />
-        )}
+        <Stack.Screen
+          name="Auth"
+          component={AuthScreen}
+          options={{ animation: "fade" }}
+        />
+        <Stack.Screen
+          name="UserProfile"
+          component={UserProfileScreen}
+          options={{ animation: "fade" }}
+        />
+        <Stack.Screen
+          name="EditProfile"
+          component={EditProfileScreen}
+          options={{ animation: "slide_from_right" }}
+        />
+        <Stack.Screen
+          name="Home"
+          component={HomeScreen}
+          options={{ animation: "fade" }}
+        />
+        <Stack.Screen
+          name="ShowDetails"
+          component={ShowDetailsScreen}
+          options={{ animation: "slide_from_bottom" }}
+        />
+        <Stack.Screen name="Search" component={SearchScreen} />
+        <Stack.Screen name="MyList" component={MyListScreen} />
+        <Stack.Screen name="CategoryContent" component={CategoryContentScreen} />
+        <Stack.Screen
+          name="VideoPlayer"
+          component={VideoPlayerScreen}
+          options={{
+            animation: "slide_from_bottom",
+            presentation: "fullScreenModal",
+          }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
