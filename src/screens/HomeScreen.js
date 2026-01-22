@@ -44,6 +44,7 @@ const TABS = [
   { id: "Home", label: "Home", icon: "home-outline", activeIcon: "home" },
   { id: "TV Shows", label: "TV Shows", icon: "tv-outline", activeIcon: "tv" },
   { id: "Movies", label: "Movies", icon: "film-outline", activeIcon: "film" },
+  { id: "Live TV", label: "Live TV", icon: "radio-outline", activeIcon: "radio" },
   { id: "My List", label: "My List", icon: "list-outline", activeIcon: "list" },
 ];
 
@@ -990,6 +991,10 @@ const TabContent = memo(({ tabId, sections, featuredItem, navigation, myListData
     );
   }
 
+  if (tabId === "Live TV") {
+    return <LiveTVScreen />;
+  }
+
   return (
     <FlatList
       data={sections}
@@ -1014,7 +1019,6 @@ const TabContent = memo(({ tabId, sections, featuredItem, navigation, myListData
               <Top10Row data={top10Data} navigation={navigation} loading={top10Loading} />
               <StoriesSection data={storiesData} navigation={navigation} onStoryPress={onStoryPress} />
               <SplitHeroSection items={splitHeroData} navigation={navigation} />
-              <FranchiseRow navigation={navigation} />
               <RandomPickSection navigation={navigation} onSurpriseMe={onSurpriseMe} isLoading={surpriseMeLoading} />
             </>
           )}
@@ -1587,6 +1591,12 @@ const styles = StyleSheet.create({
   storyWatchBtn: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", paddingVertical: 12, paddingHorizontal: 24, borderRadius: 4, gap: 8 },
   storyWatchBtnText: { color: "#000", fontSize: 15, fontWeight: "700" },
   storyInfoBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,255,255,0.2)", justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.4)" },
+
+  // Live TV styles
+  liveTVContainer: { flex: 1, paddingTop: 80 },
+  liveTVContent: { flex: 1, justifyContent: "center", alignItems: "center" },
+  liveTVTitle: { color: "#fff", fontSize: 28, fontWeight: "700", marginTop: 16 },
+  liveTVSubtitle: { color: "#888", fontSize: 16, marginTop: 8 },
 });
 
 export default HomeScreen;

@@ -34,6 +34,44 @@ export const getBackdropUrl = (path, size = "w780") => {
   return `${IMAGE_BASE_URL}/${size}${path}`;
 };
 
+// Content filter - filters out WWE, sports, ESPN, and adult content
+const shouldFilterContent = (item) => {
+  if (!item) return true;
+  
+  const title = (item.title || item.name || "").toLowerCase();
+  const overview = (item.overview || "").toLowerCase();
+  
+  // Filter keywords for WWE, sports, ESPN, and adult content
+  const filterKeywords = [
+    'wwe', 'wrestling', 'wrestlemania', 'smackdown', 'raw',
+    'espn', 'sports center', 'sportscenter', 'nfl', 'nba', 'mlb', 'nhl',
+    'football', 'basketball', 'baseball', 'hockey', 'soccer',
+    'ufc', 'boxing', 'mma', 'fight night',
+    'olympics', 'world cup', 'super bowl',
+    'xxx', 'adult', 'erotic', 'porn'
+  ];
+  
+  // Check if title or overview contains filter keywords
+  const containsFilteredContent = filterKeywords.some(keyword => 
+    title.includes(keyword) || overview.includes(keyword)
+  );
+  
+  // Filter out adult content flag
+  if (item.adult === true) return true;
+  
+  // Filter out documentary genre (ID: 99) which often includes sports
+  if (item.genre_ids && item.genre_ids.includes(99)) {
+    // Allow if it's clearly not sports-related
+    const allowedDocKeywords = ['nature', 'history', 'science', 'art', 'music', 'crime', 'true crime'];
+    const isAllowedDoc = allowedDocKeywords.some(keyword => 
+      title.includes(keyword) || overview.includes(keyword)
+    );
+    if (!isAllowedDoc) return true;
+  }
+  
+  return containsFilteredContent;
+};
+
 // Fetch trending content (mixed movies and TV shows)
 export const fetchTrending = async (timeWindow = "week") => {
   try {
@@ -41,20 +79,22 @@ export const fetchTrending = async (timeWindow = "week") => {
       `${BASE_URL}/trending/all/${timeWindow}?api_key=${API_KEY}`
     );
     const data = await response.json();
-    return data.results.map((item) => ({
-      id: item.id,
-      title: item.title || item.name,
-      image: getImageUrl(item.poster_path, "w342"),
-      backdrop: getBackdropUrl(item.backdrop_path, "w780"),
-      rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
-      year: item.release_date
-        ? new Date(item.release_date).getFullYear()
-        : item.first_air_date
-          ? new Date(item.first_air_date).getFullYear()
-          : "N/A",
-      type: item.media_type,
-      overview: item.overview,
-    }));
+    return data.results
+      .filter(item => !shouldFilterContent(item))
+      .map((item) => ({
+        id: item.id,
+        title: item.title || item.name,
+        image: getImageUrl(item.poster_path, "w342"),
+        backdrop: getBackdropUrl(item.backdrop_path, "w780"),
+        rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
+        year: item.release_date
+          ? new Date(item.release_date).getFullYear()
+          : item.first_air_date
+            ? new Date(item.first_air_date).getFullYear()
+            : "N/A",
+        type: item.media_type,
+        overview: item.overview,
+      }));
   } catch (error) {
     console.error("Error fetching trending:", error);
     return [];
@@ -68,8 +108,8 @@ export const fetchTrendingTVShows = async (timeWindow = "week", limit = 6) => {
       `${BASE_URL}/trending/tv/${timeWindow}?api_key=${API_KEY}`
     );
     const data = await response.json();
-    // Filter out Stranger Things (ID: 66732) and take limit
-    const filtered = data.results.filter(show => show.id !== 66732);
+    // Filter out Stranger Things (ID: 66732), sports, WWE, ESPN, and adult content
+    const filtered = data.results.filter(show => show.id !== 66732 && !shouldFilterContent(show));
     return filtered.slice(0, limit).map((show) => ({
       id: show.id,
       title: show.name,
@@ -96,7 +136,8 @@ export const fetchTrendingMovies = async (timeWindow = "week", limit = 6) => {
       `${BASE_URL}/trending/movie/${timeWindow}?api_key=${API_KEY}`
     );
     const data = await response.json();
-    return data.results.slice(0, limit).map((movie) => ({
+    const filtered = data.results.filter(movie => !shouldFilterContent(movie));
+    return filtered.slice(0, limit).map((movie) => ({
       id: movie.id,
       title: movie.title,
       image: getImageUrl(movie.poster_path, "w342"),
@@ -122,18 +163,20 @@ export const fetchPopularMovies = async (page = 1) => {
       `${BASE_URL}/movie/popular?api_key=${API_KEY}&page=${page}`
     );
     const data = await response.json();
-    return data.results.map((movie) => ({
-      id: movie.id,
-      title: movie.title,
-      image: getImageUrl(movie.poster_path, "w342"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
-      rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
-      year: movie.release_date
-        ? new Date(movie.release_date).getFullYear()
-        : "N/A",
-      type: "movie",
-      overview: movie.overview,
-    }));
+    return data.results
+      .filter(movie => !shouldFilterContent(movie))
+      .map((movie) => ({
+        id: movie.id,
+        title: movie.title,
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date
+          ? new Date(movie.release_date).getFullYear()
+          : "N/A",
+        type: "movie",
+        overview: movie.overview,
+      }));
   } catch (error) {
     console.error("Error fetching popular movies:", error);
     return [];
@@ -147,16 +190,18 @@ export const fetchPopularTVShows = async (page = 1) => {
       `${BASE_URL}/tv/popular?api_key=${API_KEY}&page=${page}`
     );
     const data = await response.json();
-    return data.results.map((show) => ({
-      id: show.id,
-      title: show.name,
-      image: getImageUrl(show.poster_path, "w342"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
-      rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
-      year: show.first_air_date
-        ? new Date(show.first_air_date).getFullYear()
-        : "N/A",
-      type: "tv",
+    return data.results
+      .filter(show => !shouldFilterContent(show))
+      .map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
       overview: show.overview,
     }));
   } catch (error) {
@@ -172,18 +217,20 @@ export const fetchTopRatedMovies = async (page = 1) => {
       `${BASE_URL}/movie/top_rated?api_key=${API_KEY}&page=${page}`
     );
     const data = await response.json();
-    return data.results.map((movie) => ({
-      id: movie.id,
-      title: movie.title,
-      image: getImageUrl(movie.poster_path, "w342"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
-      rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
-      year: movie.release_date
-        ? new Date(movie.release_date).getFullYear()
-        : "N/A",
-      type: "movie",
-      overview: movie.overview,
-    }));
+    return data.results
+      .filter(movie => !shouldFilterContent(movie))
+      .map((movie) => ({
+        id: movie.id,
+        title: movie.title,
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date
+          ? new Date(movie.release_date).getFullYear()
+          : "N/A",
+        type: "movie",
+        overview: movie.overview,
+      }));
   } catch (error) {
     console.error("Error fetching top rated movies:", error);
     return [];
@@ -197,18 +244,20 @@ export const fetchTopRatedTVShows = async (page = 1) => {
       `${BASE_URL}/tv/top_rated?api_key=${API_KEY}&page=${page}`
     );
     const data = await response.json();
-    return data.results.map((show) => ({
-      id: show.id,
-      title: show.name,
-      image: getImageUrl(show.poster_path, "w342"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
-      rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
-      year: show.first_air_date
-        ? new Date(show.first_air_date).getFullYear()
-        : "N/A",
-      type: "tv",
-      overview: show.overview,
-    }));
+    return data.results
+      .filter(show => !shouldFilterContent(show))
+      .map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      }));
   } catch (error) {
     console.error("Error fetching top rated TV shows:", error);
     return [];
@@ -370,7 +419,7 @@ export const searchContent = async (query) => {
     );
     const data = await response.json();
     return data.results
-      .filter((item) => item.media_type === "movie" || item.media_type === "tv")
+      .filter((item) => (item.media_type === "movie" || item.media_type === "tv") && !shouldFilterContent(item))
       .map((item) => ({
         id: item.id,
         title: item.title || item.name,
@@ -398,7 +447,9 @@ export const fetchNowPlayingMovies = async (page = 1) => {
       `${BASE_URL}/movie/now_playing?api_key=${API_KEY}&page=${page}`
     );
     const data = await response.json();
-    return data.results.map((movie) => ({
+    return data.results
+      .filter(movie => !shouldFilterContent(movie))
+      .map((movie) => ({
       id: movie.id,
       title: movie.title,
       image: getImageUrl(movie.poster_path, "w342"),
@@ -423,18 +474,20 @@ export const fetchAiringTodayTVShows = async (page = 1) => {
       `${BASE_URL}/tv/airing_today?api_key=${API_KEY}&page=${page}`
     );
     const data = await response.json();
-    return data.results.map((show) => ({
-      id: show.id,
-      title: show.name,
-      image: getImageUrl(show.poster_path, "w342"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
-      rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
-      year: show.first_air_date
-        ? new Date(show.first_air_date).getFullYear()
-        : "N/A",
-      type: "tv",
-      overview: show.overview,
-    }));
+    return data.results
+      .filter(show => !shouldFilterContent(show))
+      .map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      }));
   } catch (error) {
     console.error("Error fetching airing today TV shows:", error);
     return [];
@@ -448,18 +501,20 @@ export const fetchUpcomingMovies = async (page = 1) => {
       `${BASE_URL}/movie/upcoming?api_key=${API_KEY}&page=${page}`
     );
     const data = await response.json();
-    return data.results.map((movie) => ({
-      id: movie.id,
-      title: movie.title,
-      image: getImageUrl(movie.poster_path, "w342"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
-      rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
-      year: movie.release_date
-        ? new Date(movie.release_date).getFullYear()
-        : "N/A",
-      type: "movie",
-      overview: movie.overview,
-    }));
+    return data.results
+      .filter(movie => !shouldFilterContent(movie))
+      .map((movie) => ({
+        id: movie.id,
+        title: movie.title,
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date
+          ? new Date(movie.release_date).getFullYear()
+          : "N/A",
+        type: "movie",
+        overview: movie.overview,
+      }));
   } catch (error) {
     console.error("Error fetching upcoming movies:", error);
     return [];
@@ -473,18 +528,20 @@ export const fetchOnTheAirTVShows = async (page = 1) => {
       `${BASE_URL}/tv/on_the_air?api_key=${API_KEY}&page=${page}`
     );
     const data = await response.json();
-    return data.results.map((show) => ({
-      id: show.id,
-      title: show.name,
-      image: getImageUrl(show.poster_path, "w342"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
-      rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
-      year: show.first_air_date
-        ? new Date(show.first_air_date).getFullYear()
-        : "N/A",
-      type: "tv",
-      overview: show.overview,
-    }));
+    return data.results
+      .filter(show => !shouldFilterContent(show))
+      .map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      }));
   } catch (error) {
     console.error("Error fetching on the air TV shows:", error);
     return [];
@@ -498,18 +555,20 @@ export const fetchMoviesByGenre = async (genreId, page = 1) => {
       `${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=${genreId}&page=${page}&sort_by=popularity.desc`
     );
     const data = await response.json();
-    return data.results.map((movie) => ({
-      id: movie.id,
-      title: movie.title,
-      image: getImageUrl(movie.poster_path, "w342"),
-      backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
-      rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
-      year: movie.release_date
-        ? new Date(movie.release_date).getFullYear()
-        : "N/A",
-      type: "movie",
-      overview: movie.overview,
-    }));
+    return data.results
+      .filter(movie => !shouldFilterContent(movie))
+      .map((movie) => ({
+        id: movie.id,
+        title: movie.title,
+        image: getImageUrl(movie.poster_path, "w342"),
+        backdrop: getBackdropUrl(movie.backdrop_path, "w780"),
+        rating: movie.vote_average ? movie.vote_average.toFixed(1) : "N/A",
+        year: movie.release_date
+          ? new Date(movie.release_date).getFullYear()
+          : "N/A",
+        type: "movie",
+        overview: movie.overview,
+      }));
   } catch (error) {
     console.error("Error fetching movies by genre:", error);
     return [];
@@ -523,18 +582,20 @@ export const fetchTVShowsByGenre = async (genreId, page = 1) => {
       `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=${genreId}&page=${page}&sort_by=popularity.desc`
     );
     const data = await response.json();
-    return data.results.map((show) => ({
-      id: show.id,
-      title: show.name,
-      image: getImageUrl(show.poster_path, "w342"),
-      backdrop: getBackdropUrl(show.backdrop_path, "w780"),
-      rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
-      year: show.first_air_date
-        ? new Date(show.first_air_date).getFullYear()
-        : "N/A",
-      type: "tv",
-      overview: show.overview,
-    }));
+    return data.results
+      .filter(show => !shouldFilterContent(show))
+      .map((show) => ({
+        id: show.id,
+        title: show.name,
+        image: getImageUrl(show.poster_path, "w342"),
+        backdrop: getBackdropUrl(show.backdrop_path, "w780"),
+        rating: show.vote_average ? show.vote_average.toFixed(1) : "N/A",
+        year: show.first_air_date
+          ? new Date(show.first_air_date).getFullYear()
+          : "N/A",
+        type: "tv",
+        overview: show.overview,
+      }));
   } catch (error) {
     console.error("Error fetching TV shows by genre:", error);
     return [];

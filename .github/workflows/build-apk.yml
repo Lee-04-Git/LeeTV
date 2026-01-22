@@ -1,19 +1,18 @@
-name: Build Android APK (Local)
+name: Build Android APK
 
 on:
   push:
     branches:
       - main
       - master
-  workflow_dispatch:
   pull_request:
     branches:
       - main
       - master
+  workflow_dispatch:
 
 jobs:
   build:
-    name: Build APK Locally
     runs-on: ubuntu-latest
     
     steps:
@@ -26,45 +25,47 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Setup Java JDK
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Expo CLI
-        run: npm install -g expo-cli
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2
 
-      - name: Generate native projects
-        run: npx expo prebuild --platform android --clean
-
-      - name: Grant execute permission for gradlew
+      - name: Make gradlew executable
         run: chmod +x android/gradlew
 
       - name: Build Android APK
-        run: cd android && ./gradlew assembleRelease --no-daemon
-
-      - name: Sign APK (Debug)
         run: |
-          echo "APK built successfully!"
-          echo "Location: android/app/build/outputs/apk/release/"
+          cd android
+          ./gradlew assembleRelease --no-daemon
 
-      - name: Upload APK artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: leetv-app
-          path: android/app/build/outputs/apk/release/*.apk
+          name: app-release
+          path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
 
-      - name: Build Summary
-        run: |
-          echo "✅ APK built successfully!"
-          echo "📱 Download from GitHub Actions 'Artifacts' section"
-          echo "⚠️  Note: This is a debug-signed APK"
-          ls -lh android/app/build/outputs/apk/release/
+      - name: Create Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Release v${{ github.run_number }}
+          files: android/app/build/outputs/apk/release/app-release.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
