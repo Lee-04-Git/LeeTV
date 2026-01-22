@@ -1,9 +1,7 @@
-import React, { useState } from "react";
-import { View, ActivityIndicator } from "react-native";
+import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
-import AuthScreen from "../screens/AuthScreen";
 import UserProfileScreen from "../screens/UserProfileScreen";
 import EditProfileScreen from "../screens/EditProfileScreen";
 import HomeScreen from "../screens/HomeScreen";
@@ -16,11 +14,10 @@ import CategoryContentScreen from "../screens/CategoryContentScreen";
 const Stack = createNativeStackNavigator();
 
 const AppNavigator = () => {
-  const [loading, setLoading] = useState(false);
-
   return (
     <NavigationContainer>
       <Stack.Navigator
+        initialRouteName="UserProfile"
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: "#000000" },
@@ -28,11 +25,6 @@ const AppNavigator = () => {
           animationDuration: 300,
         }}
       >
-        <Stack.Screen
-          name="Auth"
-          component={AuthScreen}
-          options={{ animation: "fade" }}
-        />
         <Stack.Screen
           name="UserProfile"
           component={UserProfileScreen}
