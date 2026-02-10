@@ -36,38 +36,51 @@ import {
   fetchRandomPick,
 } from "../services/tmdbApi";
 import { SkeletonRow } from "../components/SkeletonLoader";
-import { getUserList, addToList, removeFromList, isInList, getContinueWatching } from "../services/supabaseService";
+import { getUserList, addToList, removeFromList, isInList } from "../services/supabaseService";
+import { getVidrockContinueWatching, clearVidrockProgress, removeVidrockProgressItem } from "../services/vidrockService";
+import SearchContent from "../components/SearchContent";
 
 const { width, height } = Dimensions.get("window");
 
 const TABS = [
   { id: "Home", label: "Home", icon: "home-outline", activeIcon: "home" },
-  { id: "TV Shows", label: "TV Shows", icon: "tv-outline", activeIcon: "tv" },
-  { id: "Movies", label: "Movies", icon: "film-outline", activeIcon: "film" },
-  { id: "Live TV", label: "Live TV", icon: "radio-outline", activeIcon: "radio" },
-  { id: "My List", label: "My List", icon: "list-outline", activeIcon: "list" },
+  { id: "Search", label: "Search", icon: "search-outline", activeIcon: "search" },
+  { id: "Library", label: "Library", icon: "list-outline", activeIcon: "list" },
 ];
 
 const CONTENT_TABS = TABS;
 
 const SECTIONS_CONFIG = {
   Home: [
-    { title: "Anime", fn: fetchAnime, params: [1], id: "anime" },
+    { title: "Recommended", fn: null, id: "recommended_home", type: "mixed" }, // Will be populated with alternating movies/shows
+    { title: "Anime", fn: fetchAnime, params: [1], id: "anime", type: "mixed" },
   ],
   Movies: [
-    { title: "Now Playing", fn: fetchNowPlayingMovies, params: [1], id: "now_playing" },
-    { title: "Upcoming", fn: fetchUpcomingMovies, params: [1], id: "upcoming" },
-    { title: "Top Rated Movies", fn: fetchTopRatedMovies, params: [2], id: "top_rated_movies" },
-    { title: "Action", fn: fetchMoviesByGenre, params: [28, 1], id: "action" },
-    { title: "Comedy", fn: fetchMoviesByGenre, params: [35, 1], id: "comedy" },
+    { title: "Recommended Movies", fn: fetchTrending, params: ["week"], id: "recommended_movies", type: "movie" },
+    { title: "Popular Movies", fn: fetchPopularMovies, params: [], id: "popular_movies", type: "movie" },
+    { title: "Top Rated Movies", fn: fetchTopRatedMovies, params: [], id: "top_rated_movies", type: "movie" },
+    { title: "Now Playing", fn: fetchNowPlayingMovies, params: [], id: "now_playing", type: "movie" },
+    { title: "Upcoming Movies", fn: fetchUpcomingMovies, params: [], id: "upcoming_movies", type: "movie" },
+    { title: "Action Movies", fn: fetchMoviesByGenre, params: [28], id: "action_movies", type: "movie" },
+    { title: "Comedy Movies", fn: fetchMoviesByGenre, params: [35], id: "comedy_movies", type: "movie" },
+    { title: "Drama Movies", fn: fetchMoviesByGenre, params: [18], id: "drama_movies", type: "movie" },
+    { title: "Sci-Fi Movies", fn: fetchMoviesByGenre, params: [878], id: "scifi_movies", type: "movie" },
+    { title: "Thriller Movies", fn: fetchMoviesByGenre, params: [53], id: "thriller_movies", type: "movie" },
   ],
-  "TV Shows": [
-    { title: "Airing Today", fn: fetchAiringTodayTVShows, params: [1], id: "airing_today" },
-    { title: "On The Air", fn: fetchOnTheAirTVShows, params: [1], id: "on_the_air" },
-    { title: "Top Rated", fn: fetchTopRatedTVShows, params: [2], id: "top_rated_tv" },
-    { title: "Drama", fn: fetchTVShowsByGenre, params: [18, 1], id: "drama" },
+  TVShows: [
+    { title: "Recommended Series", fn: fetchTrendingTVShows, params: ["week"], id: "recommended_tv", type: "tv" },
+    { title: "Popular Series", fn: fetchPopularTVShows, params: [], id: "popular_tv", type: "tv" },
+    { title: "Top Rated Series", fn: fetchTopRatedTVShows, params: [], id: "top_rated_tv", type: "tv" },
+    { title: "Airing Today", fn: fetchAiringTodayTVShows, params: [], id: "airing_today", type: "tv" },
+    { title: "On The Air", fn: fetchOnTheAirTVShows, params: [], id: "on_the_air", type: "tv" },
+    { title: "Action Series", fn: fetchTVShowsByGenre, params: [10759], id: "action_tv", type: "tv" },
+    { title: "Comedy Series", fn: fetchTVShowsByGenre, params: [35], id: "comedy_tv", type: "tv" },
+    { title: "Drama Series", fn: fetchTVShowsByGenre, params: [18], id: "drama_tv", type: "tv" },
+    { title: "Sci-Fi Series", fn: fetchTVShowsByGenre, params: [10765], id: "scifi_tv", type: "tv" },
+    { title: "Mystery Series", fn: fetchTVShowsByGenre, params: [9648], id: "mystery_tv", type: "tv" },
   ],
-  "My List": [],
+  Search: [],
+  Library: [],
 };
 
 const FRANCHISE_ICONS = [
@@ -170,35 +183,106 @@ const FranchiseRow = memo(({ navigation }) => (
   </View>
 ));
 
-// Continue Watching Row
-const ContinueWatchingRow = memo(({ data, navigation, loading }) => {
+// Continue Watching Row - Reinforced TV Show Logic
+const ContinueWatchingRow = memo(({ data, navigation, loading, showTitle = true, onRemoveItem }) => {
   if (loading) return <SkeletonRow />;
   if (!data || data.length === 0) return null;
 
+  const handleItemPress = (item) => {
+    console.log("Continue watching item pressed:", {
+      id: item.id,
+      title: item.title,
+      type: item.type,
+      last_season_watched: item.last_season_watched,
+      last_episode_watched: item.last_episode_watched,
+    });
+
+    // Strict TV show handling
+    if (item.type === "tv") {
+      // Validate season and episode data
+      const season = item.last_season_watched ? parseInt(item.last_season_watched, 10) : null;
+      const episode = item.last_episode_watched ? parseInt(item.last_episode_watched, 10) : null;
+      
+      if (season && episode && !isNaN(season) && !isNaN(episode) && season > 0 && episode > 0) {
+        console.log(`Resuming TV show: ${item.title} S${season}E${episode}`);
+        navigation.navigate("VideoPlayer", {
+          title: item.title,
+          mediaId: item.id,
+          mediaType: "tv",
+          season: season,
+          episode: episode,
+        });
+      } else {
+        // If no valid episode data, start from S1E1
+        console.log(`No valid episode data for ${item.title}, starting from S1E1`);
+        navigation.navigate("VideoPlayer", {
+          title: item.title,
+          mediaId: item.id,
+          mediaType: "tv",
+          season: 1,
+          episode: 1,
+        });
+      }
+    } else if (item.type === "movie") {
+      console.log(`Resuming movie: ${item.title}`);
+      navigation.navigate("VideoPlayer", {
+        title: item.title,
+        mediaId: item.id,
+        mediaType: "movie",
+      });
+    } else {
+      // Fallback to show details if type is unclear
+      console.log(`Unknown type for ${item.title}, opening details`);
+      navigation.navigate("ShowDetails", { show: item });
+    }
+  };
+
+  const handleRemove = async (item, event) => {
+    // Stop event propagation to prevent card press
+    event?.stopPropagation();
+    
+    if (onRemoveItem) {
+      await onRemoveItem(item);
+    }
+  };
+
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>Continue Watching</Text>
+    <View style={showTitle ? styles.section : null}>
+      {showTitle && <Text style={styles.sectionTitle}>Continue Watching</Text>}
       <FlatList
         data={data}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.continueCard}
-            onPress={() => navigation.navigate("ShowDetails", { show: item })}
+            onPress={() => handleItemPress(item)}
             activeOpacity={0.8}
           >
             <Image source={{ uri: item.backdrop || item.image }} style={styles.continueImage} resizeMode="cover" />
             <LinearGradient colors={["transparent", "rgba(0,0,0,0.9)"]} style={styles.continueGradient}>
               <Text style={styles.continueTitle} numberOfLines={1}>{item.title}</Text>
+              {item.type === "tv" && item.last_season_watched && item.last_episode_watched && (
+                <Text style={styles.continueEpisode}>
+                  S{String(item.last_season_watched).padStart(2, '0')}E{String(item.last_episode_watched).padStart(2, '0')}
+                </Text>
+              )}
               <View style={styles.progressBarContainer}>
-                <View style={[styles.progressBar, { width: `${item.progress || 30}%` }]} />
+                <View style={[styles.progressBar, { width: `${Math.min(item.progress_percent || 0, 100)}%` }]} />
               </View>
             </LinearGradient>
             <View style={styles.continuePlayIcon}>
               <Ionicons name="play" size={20} color="#fff" />
             </View>
+            {/* Remove button */}
+            <TouchableOpacity 
+              style={styles.continueRemoveBtn}
+              onPress={(e) => handleRemove(item, e)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close-circle" size={24} color="rgba(255,255,255,0.9)" />
+            </TouchableOpacity>
           </TouchableOpacity>
         )}
-        keyExtractor={(item) => `continue-${item.id}`}
+        keyExtractor={(item, index) => `continue-${item.type}-${item.id}-${index}`}
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.showList}
@@ -948,17 +1032,158 @@ const FeaturedHero = memo(({ item, navigation }) => {
   );
 });
 
-const TabContent = memo(({ tabId, sections, featuredItem, navigation, myListData, myListLoading, continueWatchingData, continueWatchingLoading, top10Data, top10Loading, splitHeroData, storiesData, onStoryPress, onSurpriseMe, surpriseMeLoading, trendingTVData, trendingTVLoading, trendingMoviesData, trendingMoviesLoading }) => {
-  if (tabId === "My List") {
+// Netflix-style Recommended Carousel (4 items with bubble indicators)
+const RecommendedCarousel = memo(({ data, navigation, loading, title = "Recommended" }) => {
+  const scrollX = useRef(new Animated.Value(0)).current;
+  const flatListRef = useRef(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  
+  if (loading) return <SkeletonRow />;
+  if (!data || data.length === 0) return null;
+
+  // Limit to 4 items for recommended carousel
+  const carouselData = data.slice(0, 4);
+  const CARD_WIDTH = width;
+  const CARD_HEIGHT = height * 0.65;
+
+  const handleScroll = Animated.event(
+    [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+    { 
+      useNativeDriver: false,
+      listener: (event) => {
+        const index = Math.round(event.nativeEvent.contentOffset.x / CARD_WIDTH);
+        setActiveIndex(index);
+      }
+    }
+  );
+
+  const renderCarouselItem = ({ item, index }) => (
+    <TrendingCarouselItem
+      item={item}
+      index={index}
+      scrollX={scrollX}
+      CARD_WIDTH={CARD_WIDTH}
+      CARD_HEIGHT={CARD_HEIGHT}
+      navigation={navigation}
+    />
+  );
+
+  return (
+    <View style={styles.recommendedContainer}>
+      <Animated.FlatList
+        ref={flatListRef}
+        data={carouselData}
+        renderItem={renderCarouselItem}
+        keyExtractor={(item) => `recommended-${item.id}`}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        bounces={false}
+      />
+      {/* Bubble indicators */}
+      <View style={styles.recommendedIndicatorContainer}>
+        {carouselData.map((_, index) => (
+          <TouchableOpacity 
+            key={`indicator-${index}`} 
+            onPress={() => flatListRef.current?.scrollToIndex({ index, animated: true })}
+            activeOpacity={0.7}
+          >
+            <View style={[
+              styles.recommendedIndicator,
+              activeIndex === index && styles.recommendedIndicatorActive
+            ]} />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+});
+
+// Floating Filter Bar (Disney+ style) - Fixed at bottom above nav
+const FloatingFilterBar = memo(({ activeFilter, onFilterChange }) => {
+  if (!activeFilter) {
+    // Show both options with separator when no filter is active
+    return (
+      <View style={styles.floatingFilterContainer}>
+        <View style={styles.floatingFilterBar}>
+          <TouchableOpacity
+            style={styles.floatingFilterItem}
+            onPress={() => onFilterChange("tv")}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.floatingFilterText}>Series</Text>
+          </TouchableOpacity>
+          <View style={styles.floatingFilterSeparator}>
+            <Text style={styles.floatingFilterSeparatorText}>|</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.floatingFilterItem}
+            onPress={() => onFilterChange("movie")}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.floatingFilterText}>Movies</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Show only active filter with close button (Disney+ style)
+  const activeLabel = activeFilter === "tv" ? "Series" : "Movies";
+  
+  return (
+    <View style={styles.floatingFilterContainer}>
+      <View style={styles.floatingFilterBarActive}>
+        <Text style={styles.floatingFilterTextActive}>
+          {activeLabel}
+        </Text>
+        <TouchableOpacity 
+          style={styles.floatingFilterCloseBtn}
+          onPress={() => onFilterChange(null)}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="close" size={14} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+});
+
+const TabContent = memo(({ tabId, sections, navigation, myListData, myListLoading, continueWatchingData, continueWatchingLoading, top10Data, top10Loading, splitHeroData, storiesData, onStoryPress, onSurpriseMe, surpriseMeLoading, onClearContinueWatching, onRemoveContinueWatchingItem, contentFilter, filterLoading }) => {
+  if (tabId === "Library") {
     return (
       <ScrollView style={styles.myListContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.tabHeader}>
-          <Text style={styles.tabHeaderTitle}>My List</Text>
+          <Text style={styles.tabHeaderTitle}>Library</Text>
         </View>
+        
+        {/* Continue Watching Row with Clear Button */}
+        {continueWatchingData && continueWatchingData.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Continue Watching</Text>
+              <TouchableOpacity onPress={onClearContinueWatching} style={styles.clearButton}>
+                <Text style={styles.clearButtonText}>Clear All</Text>
+              </TouchableOpacity>
+            </View>
+            <ContinueWatchingRow 
+              data={continueWatchingData} 
+              navigation={navigation} 
+              loading={continueWatchingLoading}
+              showTitle={false}
+              onRemoveItem={onRemoveContinueWatchingItem}
+            />
+          </View>
+        )}
+        
+        {/* My List Content */}
         {myListLoading ? (
           <SkeletonRow />
         ) : myListData && myListData.length > 0 ? (
           <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Saved</Text>
             <FlatList
               data={myListData}
               renderItem={({ item }) => (
@@ -983,68 +1208,111 @@ const TabContent = memo(({ tabId, sections, featuredItem, navigation, myListData
         ) : (
           <View style={styles.emptyList}>
             <Ionicons name="bookmark-outline" size={64} color="#555" />
-            <Text style={styles.emptyListText}>Your list is empty</Text>
-            <Text style={styles.emptyListSubtext}>Add movies and shows to your list to watch later</Text>
+            <Text style={styles.emptyListText}>Your library is empty</Text>
+            <Text style={styles.emptyListSubtext}>Add movies and shows to your library to watch later</Text>
           </View>
         )}
       </ScrollView>
     );
   }
 
-  if (tabId === "Live TV") {
-    return <LiveTVScreen />;
+  if (tabId === "Search") {
+    // Render search content inline
+    return (
+      <SearchContent navigation={navigation} />
+    );
   }
+
+  // Show skeleton loading when switching filters
+  if (filterLoading) {
+    return (
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+        <View style={{ paddingTop: 80 }}>
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+          <SkeletonRow />
+        </View>
+      </ScrollView>
+    );
+  }
+
+  // Get recommended data based on filter
+  const getRecommendedData = () => {
+    if (!contentFilter) return [];
+    
+    // Find the first section which should be "Recommended"
+    const recommendedSection = sections.find(s => s.title?.includes("Recommended"));
+    return recommendedSection?.data || [];
+  };
+
+  const recommendedData = getRecommendedData();
 
   return (
     <FlatList
       data={sections}
-      renderItem={({ item }) => (
-        <HorizontalList
-          title={item.title}
-          data={item.data}
-          loading={item.loading}
-          onShowPress={(show) => navigation.navigate("ShowDetails", { show })}
-          navigation={navigation}
-          categoryId={item.id}
-          categoryType={tabId === "Movies" ? "movie" : tabId === "TV Shows" ? "tv" : "mixed"}
-        />
-      )}
+      renderItem={({ item, index }) => {
+        // Skip rendering the Recommended section in the list since we show it as carousel
+        if (tabId === "Home" && item.id === "recommended_home") return null;
+        if (contentFilter && index === 0 && item.title?.includes("Recommended")) return null;
+        
+        return (
+          <HorizontalList
+            title={item.title}
+            data={item.data || []}
+            loading={item.loading}
+            onShowPress={(show) => navigation.navigate("ShowDetails", { show })}
+            navigation={navigation}
+            categoryId={item.id}
+            categoryType={item.type || "mixed"}
+          />
+        );
+      }}
       keyExtractor={(item, index) => `${tabId}-${item.id}-${index}`}
-      ListHeaderComponent={() => (
-        <View>
-          {tabId === "Home" && (
-            <>
-              <FeaturedHero item={featuredItem} navigation={navigation} />
-              <ContinueWatchingRow data={continueWatchingData} navigation={navigation} loading={continueWatchingLoading} />
-              <Top10Row data={top10Data} navigation={navigation} loading={top10Loading} />
-              <StoriesSection data={storiesData} navigation={navigation} onStoryPress={onStoryPress} />
-              <SplitHeroSection items={splitHeroData} navigation={navigation} />
-              <RandomPickSection navigation={navigation} onSurpriseMe={onSurpriseMe} isLoading={surpriseMeLoading} />
-            </>
-          )}
-          {tabId === "TV Shows" && (
-            <TrendingCarousel 
-              data={trendingTVData} 
-              navigation={navigation} 
-              loading={trendingTVLoading}
-              title="Trending TV Shows This Week"
-            />
-          )}
-          {tabId === "Movies" && (
-            <TrendingCarousel 
-              data={trendingMoviesData} 
-              navigation={navigation} 
-              loading={trendingMoviesLoading}
-              title="Trending Movies This Week"
-            />
-          )}
-          {tabId !== "Home" && tabId !== "TV Shows" && tabId !== "Movies" && (
-            <View style={styles.tabHeader}>
-              <Text style={styles.tabHeaderTitle}>{tabId}</Text>
-            </View>
-          )}
-        </View>
-      )}
+      ListHeaderComponent={() => {
+        // Get recommended data
+        const recommendedSection = sections.find(s => s.id?.includes("recommended"));
+        const recommendedData = recommendedSection?.data || [];
+        const recommendedLoading = recommendedSection?.loading || false;
+        
+        return (
+          <View>
+            {tabId === "Home" && !contentFilter && (
+              <>
+                {/* Home Recommended Carousel - Alternating Movies/Shows */}
+                {recommendedData.length > 0 && (
+                  <RecommendedCarousel 
+                    data={recommendedData} 
+                    navigation={navigation} 
+                    loading={recommendedLoading}
+                    title="Recommended for You"
+                  />
+                )}
+                <Top10Row data={top10Data || []} navigation={navigation} loading={top10Loading} />
+                {storiesData && storiesData.length > 0 && (
+                  <StoriesSection data={storiesData} navigation={navigation} onStoryPress={onStoryPress} />
+                )}
+                {splitHeroData && splitHeroData.length > 0 && (
+                  <SplitHeroSection items={splitHeroData} navigation={navigation} />
+                )}
+                <RandomPickSection navigation={navigation} onSurpriseMe={onSurpriseMe} isLoading={surpriseMeLoading} />
+              </>
+            )}
+            {contentFilter && (
+              <>
+                {/* Netflix-style Recommended Carousel at top */}
+                <RecommendedCarousel 
+                  data={recommendedData} 
+                  navigation={navigation} 
+                  loading={recommendedLoading}
+                  title={contentFilter === "movie" ? "Recommended Movies" : "Recommended Series"}
+                />
+              </>
+            )}
+          </View>
+        );
+      }}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
     />
@@ -1055,43 +1323,45 @@ const BottomNavBar = memo(({ activeIndex, onTabChange, indicatorAnim }) => {
   const tabWidth = width / TABS.length;
 
   return (
-    <View style={styles.bottomNav}>
-      <Animated.View
-        style={[
-          styles.navIndicator,
-          {
-            width: tabWidth - 16,
-            transform: [{
-              translateX: indicatorAnim.interpolate({
-                inputRange: [0, 1, 2, 3],
-                outputRange: [8, tabWidth + 8, tabWidth * 2 + 8, tabWidth * 3 + 8],
-              }),
-            }],
-          },
-        ]}
-      />
+    <SafeAreaView edges={["bottom"]} style={{ backgroundColor: "#010e1f" }}>
+      <View style={styles.bottomNav}>
+        <Animated.View
+          style={[
+            styles.navIndicator,
+            {
+              width: tabWidth - 16,
+              transform: [{
+                translateX: indicatorAnim.interpolate({
+                  inputRange: [0, 1, 2, 3],
+                  outputRange: [8, tabWidth + 8, tabWidth * 2 + 8, tabWidth * 3 + 8],
+                }),
+              }],
+            },
+          ]}
+        />
 
-      {TABS.map((tab, index) => {
-        const isActive = index === activeIndex;
-        return (
-          <TouchableOpacity
-            key={tab.id}
-            style={styles.navItem}
-            onPress={() => onTabChange(index)}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={isActive ? tab.activeIcon : tab.icon}
-              size={24}
-              color={isActive ? "#fff" : "#888"}
-            />
-            <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>
-              {tab.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
+        {TABS.map((tab, index) => {
+          const isActive = index === activeIndex;
+          return (
+            <TouchableOpacity
+              key={tab.id}
+              style={styles.navItem}
+              onPress={() => onTabChange(index)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={isActive ? tab.activeIcon : tab.icon}
+                size={24}
+                color={isActive ? "#fff" : "#888"}
+              />
+              <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>
+                {tab.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </SafeAreaView>
   );
 });
 
@@ -1099,9 +1369,10 @@ const BottomNavBar = memo(({ activeIndex, onTabChange, indicatorAnim }) => {
 const HomeScreen = ({ navigation }) => {
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [tabData, setTabData] = useState({});
-  const [featuredItem, setFeaturedItem] = useState(null);
   const [myListData, setMyListData] = useState([]);
   const [myListLoading, setMyListLoading] = useState(false);
+  const [contentFilter, setContentFilter] = useState(null); // null, "movie", or "tv"
+  const [filterLoading, setFilterLoading] = useState(false);
 
   // New state for additional sections
   const [continueWatchingData, setContinueWatchingData] = useState([]);
@@ -1109,16 +1380,10 @@ const HomeScreen = ({ navigation }) => {
   const [top10Data, setTop10Data] = useState([]);
   const [top10Loading, setTop10Loading] = useState(true);
   const [splitHeroData, setSplitHeroData] = useState([]);
-  const [storiesData, setStoriesData] = useState([]);
+  const [storiesData, setStoriesData] = useState([]); // Bring back for Home
   const [storyViewerVisible, setStoryViewerVisible] = useState(false);
   const [storyInitialIndex, setStoryInitialIndex] = useState(0);
   const [surpriseMeLoading, setSurpriseMeLoading] = useState(false);
-  
-  // Trending carousel data
-  const [trendingTVData, setTrendingTVData] = useState([]);
-  const [trendingTVLoading, setTrendingTVLoading] = useState(true);
-  const [trendingMoviesData, setTrendingMoviesData] = useState([]);
-  const [trendingMoviesLoading, setTrendingMoviesLoading] = useState(true);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const indicatorAnim = useRef(new Animated.Value(0)).current;
@@ -1126,44 +1391,43 @@ const HomeScreen = ({ navigation }) => {
   const currentTab = CONTENT_TABS[activeTabIndex]?.id || "Home";
 
   useEffect(() => {
-    loadFeaturedItem();
     loadContinueWatching();
     loadTop10AndSplitHero();
-    loadTrendingCarousels();
-    loadStories();
+    loadStories(); // Bring back for Home page
   }, []);
+
+  // Refresh continue watching when screen comes into focus
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadContinueWatching();
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   useEffect(() => {
     loadTabData(currentTab);
   }, [currentTab]);
 
-  const loadFeaturedItem = async () => {
-    try {
-      const data = await fetchTrending("week");
-      if (data && data.length > 0) {
-        setFeaturedItem(data[0]);
-      }
-    } catch (e) {
-      console.error("Error loading featured:", e);
+  // Load appropriate sections when filter changes
+  useEffect(() => {
+    if (contentFilter === "movie") {
+      loadTabData("Movies");
+    } else if (contentFilter === "tv") {
+      loadTabData("TVShows");
+    } else {
+      loadTabData("Home");
     }
-  };
+  }, [contentFilter]);
 
   const loadContinueWatching = async () => {
     setContinueWatchingLoading(true);
     try {
-      const data = await getContinueWatching();
-      const transformedData = data.map(item => ({
-        ...item,
-        id: item.media_id,
-        type: item.media_type,
-        title: item.title,
-        image: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
-        backdrop: item.backdrop_path ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}` : null,
-        progress: item.progress_percent || 30,
-      }));
-      setContinueWatchingData(transformedData);
+      const data = await getVidrockContinueWatching();
+      setContinueWatchingData(data);
+      console.log("Continue watching loaded:", data.length, "items");
     } catch (e) {
       console.error("Error loading continue watching:", e);
+      setContinueWatchingData([]);
     } finally {
       setContinueWatchingLoading(false);
     }
@@ -1184,24 +1448,6 @@ const HomeScreen = ({ navigation }) => {
     } catch (e) {
       console.error("Error loading top 10 or split hero:", e);
       setTop10Loading(false);
-    }
-  };
-
-  const loadTrendingCarousels = async () => {
-    setTrendingTVLoading(true);
-    setTrendingMoviesLoading(true);
-    try {
-      const [tvData, moviesData] = await Promise.all([
-        fetchTrendingTVShows("week", 6),
-        fetchTrendingMovies("week", 6),
-      ]);
-      setTrendingTVData(tvData);
-      setTrendingMoviesData(moviesData);
-    } catch (e) {
-      console.error("Error loading trending carousels:", e);
-    } finally {
-      setTrendingTVLoading(false);
-      setTrendingMoviesLoading(false);
     }
   };
 
@@ -1233,6 +1479,41 @@ const HomeScreen = ({ navigation }) => {
     }
   }, [navigation]);
 
+  const handleClearContinueWatching = useCallback(async () => {
+    try {
+      await clearVidrockProgress();
+      setContinueWatchingData([]);
+      console.log("Continue watching cleared successfully");
+    } catch (error) {
+      console.error("Error clearing continue watching:", error);
+    }
+  }, []);
+
+  const handleRemoveContinueWatchingItem = useCallback(async (item) => {
+    try {
+      console.log(`Removing ${item.title} from continue watching...`);
+      
+      const result = await removeVidrockProgressItem(item.id, item.type);
+      
+      if (result.success) {
+        // Update state to remove the item from UI
+        setContinueWatchingData(prev => 
+          prev.filter(i => !(i.id === item.id && i.type === item.type))
+        );
+        
+        console.log(`✅ ${item.title} removed successfully`);
+        
+        // Optional: Show success message to user
+        // You could add a toast notification here
+      } else {
+        console.error(`❌ Failed to remove ${item.title}:`, result.error);
+        // Optional: Show error message to user
+      }
+    } catch (error) {
+      console.error("❌ Error removing continue watching item:", error);
+    }
+  }, []);
+
   const loadMyList = async () => {
     setMyListLoading(true);
     try {
@@ -1253,19 +1534,29 @@ const HomeScreen = ({ navigation }) => {
   };
 
   const loadTabData = async (tabId) => {
-    if (tabId === "My List") {
+    if (tabId === "Library") {
       loadMyList();
+      loadContinueWatching();
       return;
     }
 
-    if (tabData[tabId]?.loaded) return;
+    // Determine which config to use based on filter
+    let configKey = tabId;
+    if (contentFilter === "movie") {
+      configKey = "Movies";
+    } else if (contentFilter === "tv") {
+      configKey = "TVShows";
+    }
 
-    const config = SECTIONS_CONFIG[tabId] || [];
+    const config = SECTIONS_CONFIG[configKey] || [];
     if (config.length === 0) return;
+
+    // Check if already loaded
+    if (tabData[configKey]?.loaded && !contentFilter) return;
 
     setTabData(prev => ({
       ...prev,
-      [tabId]: {
+      [configKey]: {
         sections: config.map(item => ({ ...item, data: [], loading: true })),
         loaded: false,
       },
@@ -1273,18 +1564,48 @@ const HomeScreen = ({ navigation }) => {
 
     const promises = config.map(async (section, index) => {
       try {
-        const data = await section.fn(...(section.params || []));
+        let data;
+        
+        // Special handling for Home recommended section - alternate movies and shows
+        if (section.id === "recommended_home") {
+          const [movies, shows] = await Promise.all([
+            fetchTrendingMovies("week"),
+            fetchTrendingTVShows("week")
+          ]);
+          
+          // Alternate: movie, show, movie, show (take 2 of each)
+          data = [
+            movies[0],  // Movie 1
+            shows[0],   // Show 1
+            movies[1],  // Movie 2
+            shows[1],   // Show 2
+          ].filter(Boolean); // Remove any undefined items
+        } else if (section.fn) {
+          data = await section.fn(...(section.params || []));
+        } else {
+          data = [];
+        }
+        
         setTabData(prev => {
-          const tabState = prev[tabId];
+          const tabState = prev[configKey];
           if (!tabState) return prev;
           const newSections = [...tabState.sections];
           if (newSections[index]) {
             newSections[index] = { ...newSections[index], data, loading: false };
           }
-          return { ...prev, [tabId]: { ...tabState, sections: newSections, loaded: true } };
+          return { ...prev, [configKey]: { ...tabState, sections: newSections, loaded: true } };
         });
       } catch (error) {
         console.error(`Error loading ${section.title}:`, error);
+        setTabData(prev => {
+          const tabState = prev[configKey];
+          if (!tabState) return prev;
+          const newSections = [...tabState.sections];
+          if (newSections[index]) {
+            newSections[index] = { ...newSections[index], data: [], loading: false };
+          }
+          return { ...prev, [configKey]: { ...tabState, sections: newSections } };
+        });
       }
     });
 
@@ -1314,6 +1635,19 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
+  const handleContentFilterChange = async (filter) => {
+    // filter can be "movie", "tv", or null (to clear)
+    if (filter === contentFilter) return; // Already on this filter
+    
+    setFilterLoading(true);
+    setContentFilter(filter);
+    
+    // Small delay to show skeleton loading
+    setTimeout(() => {
+      setFilterLoading(false);
+    }, 300);
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
@@ -1321,12 +1655,12 @@ const HomeScreen = ({ navigation }) => {
       <SafeAreaView edges={["top"]} style={styles.headerSafeArea}>
         <View style={styles.header}>
           <View style={{ flex: 1 }} />
-          <TouchableOpacity onPress={() => navigation.navigate("Search")} style={styles.headerIcon}>
-            <Ionicons name="search" size={24} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate("UserProfile")} style={styles.headerIcon}>
-            <Ionicons name="person-circle-outline" size={28} color="#fff" />
-          </TouchableOpacity>
+          {/* Avatar icon only shows in Library tab */}
+          {currentTab === "Library" && (
+            <TouchableOpacity onPress={() => navigation.navigate("UserProfile")} style={styles.headerIcon}>
+              <Ionicons name="person-circle-outline" size={28} color="#fff" />
+            </TouchableOpacity>
+          )}
         </View>
       </SafeAreaView>
 
@@ -1337,31 +1671,40 @@ const HomeScreen = ({ navigation }) => {
             { transform: [{ translateX: slideAnim }] },
           ]}
         >
-          {CONTENT_TABS.map((tab) => (
-            <View key={tab.id} style={styles.tabPane}>
-              <TabContent
-                tabId={tab.id}
-                sections={tabData[tab.id]?.sections || []}
-                featuredItem={featuredItem}
-                navigation={navigation}
-                myListData={myListData}
-                myListLoading={myListLoading}
-                continueWatchingData={continueWatchingData}
-                continueWatchingLoading={continueWatchingLoading}
-                top10Data={top10Data}
-                top10Loading={top10Loading}
-                splitHeroData={splitHeroData}
-                storiesData={storiesData}
-                onStoryPress={handleStoryPress}
-                onSurpriseMe={handleSurpriseMe}
-                surpriseMeLoading={surpriseMeLoading}
-                trendingTVData={trendingTVData}
-                trendingTVLoading={trendingTVLoading}
-                trendingMoviesData={trendingMoviesData}
-                trendingMoviesLoading={trendingMoviesLoading}
-              />
-            </View>
-          ))}
+          {CONTENT_TABS.map((tab) => {
+            // Determine which sections to show based on filter
+            let sectionsKey = tab.id;
+            if (contentFilter === "movie") {
+              sectionsKey = "Movies";
+            } else if (contentFilter === "tv") {
+              sectionsKey = "TVShows";
+            }
+
+            return (
+              <View key={tab.id} style={styles.tabPane}>
+                <TabContent
+                  tabId={tab.id}
+                  sections={tabData[sectionsKey]?.sections || []}
+                  navigation={navigation}
+                  myListData={myListData}
+                  myListLoading={myListLoading}
+                  continueWatchingData={continueWatchingData}
+                  continueWatchingLoading={continueWatchingLoading}
+                  top10Data={top10Data}
+                  top10Loading={top10Loading}
+                  splitHeroData={splitHeroData}
+                  storiesData={storiesData}
+                  onStoryPress={handleStoryPress}
+                  onSurpriseMe={handleSurpriseMe}
+                  surpriseMeLoading={surpriseMeLoading}
+                  onClearContinueWatching={handleClearContinueWatching}
+                  onRemoveContinueWatchingItem={handleRemoveContinueWatchingItem}
+                  contentFilter={contentFilter}
+                  filterLoading={filterLoading}
+                />
+              </View>
+            );
+          })}
         </Animated.View>
       </View>
 
@@ -1372,6 +1715,14 @@ const HomeScreen = ({ navigation }) => {
         onClose={() => setStoryViewerVisible(false)}
         navigation={navigation}
       />
+
+      {/* Floating Filter Bar - Only show on Home tab */}
+      {currentTab === "Home" && (
+        <FloatingFilterBar 
+          activeFilter={contentFilter} 
+          onFilterChange={handleContentFilterChange} 
+        />
+      )}
 
       <BottomNavBar
         activeIndex={activeTabIndex}
@@ -1428,7 +1779,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#010e1f",
     paddingTop: 12,
-    paddingBottom: 28,
+    paddingBottom: 12,
     borderTopWidth: 0.5,
     borderTopColor: "#1a3a5c",
     position: "relative",
@@ -1445,13 +1796,15 @@ const styles = StyleSheet.create({
   emptyListSubtext: { color: "#888", fontSize: 14, textAlign: "center", marginTop: 8 },
 
   // Continue Watching styles
-  continueCard: { width: 180, height: 100, borderRadius: 6, overflow: "hidden", backgroundColor: "#0a1929", marginRight: 8 },
+  continueCard: { width: 180, height: 100, borderRadius: 6, overflow: "hidden", backgroundColor: "#0a1929", marginRight: 8, position: "relative" },
   continueImage: { width: "100%", height: "100%" },
   continueGradient: { ...StyleSheet.absoluteFillObject, justifyContent: "flex-end", padding: 8 },
-  continueTitle: { color: "#fff", fontSize: 12, fontWeight: "600", marginBottom: 6 },
+  continueTitle: { color: "#fff", fontSize: 12, fontWeight: "600", marginBottom: 2 },
+  continueEpisode: { color: "#37d1e4", fontSize: 10, fontWeight: "600", marginBottom: 4 },
   progressBarContainer: { height: 3, backgroundColor: "rgba(255,255,255,0.3)", borderRadius: 2 },
   progressBar: { height: "100%", backgroundColor: "#37d1e4", borderRadius: 2 },
   continuePlayIcon: { position: "absolute", top: "50%", left: "50%", marginTop: -16, marginLeft: -16, width: 32, height: 32, borderRadius: 16, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", borderWidth: 2, borderColor: "#fff" },
+  continueRemoveBtn: { position: "absolute", top: 4, right: 4, width: 28, height: 28, borderRadius: 14, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", zIndex: 10 },
 
   // Trending Carousel styles - Disney+ Hero Style (full-bleed like homepage)
   trendingContainer: { },
@@ -1597,6 +1950,114 @@ const styles = StyleSheet.create({
   liveTVContent: { flex: 1, justifyContent: "center", alignItems: "center" },
   liveTVTitle: { color: "#fff", fontSize: 28, fontWeight: "700", marginTop: 16 },
   liveTVSubtitle: { color: "#888", fontSize: 16, marginTop: 8 },
+
+  // Clear button styles
+  clearButton: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 4, borderWidth: 1, borderColor: "rgba(255,255,255,0.2)" },
+  clearButtonText: { color: "#37d1e4", fontSize: 13, fontWeight: "600" },
+
+  // Floating Navigation Bar styles (Disney+ style)
+  floatingNavContainer: { paddingHorizontal: 16, paddingVertical: 12, marginTop: -20 },
+  floatingNavBar: { flexDirection: "row", backgroundColor: "rgba(10,25,41,0.95)", borderRadius: 24, padding: 4, alignSelf: "center", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" },
+  floatingNavItem: { paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, minWidth: 80, alignItems: "center" },
+  floatingNavItemActive: { backgroundColor: "rgba(55,209,228,0.2)", borderWidth: 1, borderColor: "#37d1e4" },
+  floatingNavText: { color: "rgba(255,255,255,0.6)", fontSize: 14, fontWeight: "600" },
+  floatingNavTextActive: { color: "#37d1e4" },
+
+  // Floating Filter Bar styles (Disney+ style) - Fixed at bottom above nav
+  floatingFilterContainer: { 
+    position: "absolute", 
+    bottom: 120, // Significantly increased to ensure no overlap with bottom nav
+    left: 0, 
+    right: 0, 
+    alignItems: "center", 
+    paddingHorizontal: 16,
+    zIndex: 100,
+  },
+  floatingFilterBar: { 
+    flexDirection: "row", 
+    alignItems: "center",
+    backgroundColor: "rgba(10,25,41,0.95)", 
+    borderRadius: 20, // Smaller radius
+    paddingVertical: 6, // Smaller padding
+    paddingHorizontal: 12,
+    borderWidth: 1, 
+    borderColor: "rgba(255,255,255,0.15)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  floatingFilterItem: { 
+    paddingHorizontal: 12, // Smaller padding
+    paddingVertical: 6,
+  },
+  floatingFilterText: { 
+    color: "rgba(255,255,255,0.7)", 
+    fontSize: 13, // Smaller font
+    fontWeight: "600" 
+  },
+  floatingFilterSeparator: {
+    paddingHorizontal: 4,
+  },
+  floatingFilterSeparatorText: {
+    color: "rgba(255,255,255,0.3)",
+    fontSize: 13,
+    fontWeight: "400",
+  },
+  // Active filter bar (Disney+ style - single pill with close button)
+  floatingFilterBarActive: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(10,25,41,0.95)",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    gap: 10,
+  },
+  floatingFilterTextActive: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  floatingFilterCloseBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // Recommended Carousel styles (Netflix-style)
+  recommendedContainer: { 
+    marginBottom: 0,
+  },
+  recommendedIndicatorContainer: { 
+    flexDirection: "row", 
+    justifyContent: "center", 
+    alignItems: "center", 
+    paddingVertical: 16, 
+    gap: 6,
+  },
+  recommendedIndicator: { 
+    width: 8, 
+    height: 8, 
+    borderRadius: 4, 
+    backgroundColor: "rgba(255,255,255,0.3)" 
+  },
+  recommendedIndicatorActive: { 
+    width: 8,
+    height: 8,
+    backgroundColor: "#fff" 
+  },
 });
 
 export default HomeScreen;

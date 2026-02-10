@@ -156,11 +156,11 @@ export const fetchTrendingMovies = async (timeWindow = "week", limit = 6) => {
   }
 };
 
-// Fetch popular movies
+// Fetch popular movies (with explicit adult content filter)
 export const fetchPopularMovies = async (page = 1) => {
   try {
     const response = await fetch(
-      `${BASE_URL}/movie/popular?api_key=${API_KEY}&page=${page}`
+      `${BASE_URL}/movie/popular?api_key=${API_KEY}&page=${page}&include_adult=false`
     );
     const data = await response.json();
     return data.results
@@ -176,6 +176,7 @@ export const fetchPopularMovies = async (page = 1) => {
           : "N/A",
         type: "movie",
         overview: movie.overview,
+        genre_ids: movie.genre_ids || [],
       }));
   } catch (error) {
     console.error("Error fetching popular movies:", error);
@@ -183,11 +184,11 @@ export const fetchPopularMovies = async (page = 1) => {
   }
 };
 
-// Fetch popular TV shows
+// Fetch popular TV shows (with explicit adult content filter)
 export const fetchPopularTVShows = async (page = 1) => {
   try {
     const response = await fetch(
-      `${BASE_URL}/tv/popular?api_key=${API_KEY}&page=${page}`
+      `${BASE_URL}/tv/popular?api_key=${API_KEY}&page=${page}&include_adult=false`
     );
     const data = await response.json();
     return data.results
@@ -202,7 +203,8 @@ export const fetchPopularTVShows = async (page = 1) => {
           ? new Date(show.first_air_date).getFullYear()
           : "N/A",
         type: "tv",
-      overview: show.overview,
+        overview: show.overview,
+        genre_ids: show.genre_ids || [],
     }));
   } catch (error) {
     console.error("Error fetching popular TV shows:", error);
@@ -410,16 +412,33 @@ export const fetchSeasonDetails = async (showId, seasonNumber) => {
 };
 
 // Search for movies and TV shows
-export const searchContent = async (query) => {
+export const searchContent = async (query, mediaType = null) => {
   try {
-    const response = await fetch(
-      `${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(
-        query
-      )}&page=1`
-    );
+    // Use specific endpoint if mediaType is provided, otherwise use multi search
+    let url;
+    if (mediaType === "movie") {
+      url = `${BASE_URL}/search/movie?api_key=${API_KEY}&query=${encodeURIComponent(query)}&page=1`;
+    } else if (mediaType === "tv") {
+      url = `${BASE_URL}/search/tv?api_key=${API_KEY}&query=${encodeURIComponent(query)}&page=1`;
+    } else {
+      url = `${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(query)}&page=1`;
+    }
+
+    const response = await fetch(url);
     const data = await response.json();
+    
     return data.results
-      .filter((item) => (item.media_type === "movie" || item.media_type === "tv") && !shouldFilterContent(item))
+      .filter((item) => {
+        // For multi search, filter by media type
+        const isValidType = mediaType 
+          ? item.media_type === mediaType 
+          : (item.media_type === "movie" || item.media_type === "tv");
+        
+        // For specific searches, media_type might not be set, so infer it
+        const type = item.media_type || mediaType;
+        
+        return isValidType && !shouldFilterContent(item);
+      })
       .map((item) => ({
         id: item.id,
         title: item.title || item.name,
@@ -431,7 +450,7 @@ export const searchContent = async (query) => {
           : item.first_air_date
             ? new Date(item.first_air_date).getFullYear()
             : "N/A",
-        type: item.media_type,
+        type: item.media_type || mediaType,
         overview: item.overview,
       }));
   } catch (error) {
@@ -548,11 +567,11 @@ export const fetchOnTheAirTVShows = async (page = 1) => {
   }
 };
 
-// Fetch movies by genre
+// Fetch movies by genre (with explicit adult content filter)
 export const fetchMoviesByGenre = async (genreId, page = 1) => {
   try {
     const response = await fetch(
-      `${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=${genreId}&page=${page}&sort_by=popularity.desc`
+      `${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=${genreId}&page=${page}&sort_by=popularity.desc&include_adult=false`
     );
     const data = await response.json();
     return data.results
@@ -568,6 +587,7 @@ export const fetchMoviesByGenre = async (genreId, page = 1) => {
           : "N/A",
         type: "movie",
         overview: movie.overview,
+        genre_ids: movie.genre_ids || [],
       }));
   } catch (error) {
     console.error("Error fetching movies by genre:", error);
@@ -575,11 +595,11 @@ export const fetchMoviesByGenre = async (genreId, page = 1) => {
   }
 };
 
-// Fetch TV shows by genre
+// Fetch TV shows by genre (with explicit adult content filter)
 export const fetchTVShowsByGenre = async (genreId, page = 1) => {
   try {
     const response = await fetch(
-      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=${genreId}&page=${page}&sort_by=popularity.desc`
+      `${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=${genreId}&page=${page}&sort_by=popularity.desc&include_adult=false`
     );
     const data = await response.json();
     return data.results
@@ -595,6 +615,7 @@ export const fetchTVShowsByGenre = async (genreId, page = 1) => {
           : "N/A",
         type: "tv",
         overview: show.overview,
+        genre_ids: show.genre_ids || [],
       }));
   } catch (error) {
     console.error("Error fetching TV shows by genre:", error);
@@ -702,46 +723,82 @@ export const fetchRecommendedTVShows = async (showId) => {
   }
 };
 
-// Fetch multiple pages of movies (for large dataset)
-export const fetchAllMovies = async (totalPages = 20) => {
+// Fetch multiple pages of movies (for large dataset - 3000 movies)
+export const fetchAllMovies = async (totalPages = 150) => {
   try {
     const allMovies = [];
-    const pagePromises = [];
-
-    // Fetch 20 pages in parallel (400 movies)
-    for (let page = 1; page <= totalPages; page++) {
-      pagePromises.push(fetchPopularMovies(page));
+    
+    // Fetch in batches of 10 pages to avoid overwhelming the API
+    const batchSize = 10;
+    const numBatches = Math.ceil(totalPages / batchSize);
+    
+    console.log(`Fetching ${totalPages} pages of movies in ${numBatches} batches...`);
+    
+    for (let batch = 0; batch < numBatches; batch++) {
+      const startPage = batch * batchSize + 1;
+      const endPage = Math.min(startPage + batchSize - 1, totalPages);
+      const pagePromises = [];
+      
+      for (let page = startPage; page <= endPage; page++) {
+        pagePromises.push(fetchPopularMovies(page));
+      }
+      
+      const results = await Promise.all(pagePromises);
+      results.forEach((pageMovies) => {
+        allMovies.push(...pageMovies);
+      });
+      
+      console.log(`Batch ${batch + 1}/${numBatches} complete: ${allMovies.length} movies loaded`);
     }
-
-    const results = await Promise.all(pagePromises);
-    results.forEach((pageMovies) => {
-      allMovies.push(...pageMovies);
-    });
-
-    return allMovies;
+    
+    // Remove duplicates by ID
+    const uniqueMovies = Array.from(
+      new Map(allMovies.map(movie => [movie.id, movie])).values()
+    );
+    
+    console.log(`Fetched ${uniqueMovies.length} unique movies (filtered, no adult content)`);
+    return uniqueMovies;
   } catch (error) {
     console.error("Error fetching all movies:", error);
     return [];
   }
 };
 
-// Fetch multiple pages of TV shows (for large dataset)
-export const fetchAllTVShows = async (totalPages = 20) => {
+// Fetch multiple pages of TV shows (for large dataset - 3000 shows)
+export const fetchAllTVShows = async (totalPages = 150) => {
   try {
     const allShows = [];
-    const pagePromises = [];
-
-    // Fetch 20 pages in parallel (400 TV shows)
-    for (let page = 1; page <= totalPages; page++) {
-      pagePromises.push(fetchPopularTVShows(page));
+    
+    // Fetch in batches of 10 pages to avoid overwhelming the API
+    const batchSize = 10;
+    const numBatches = Math.ceil(totalPages / batchSize);
+    
+    console.log(`Fetching ${totalPages} pages of TV shows in ${numBatches} batches...`);
+    
+    for (let batch = 0; batch < numBatches; batch++) {
+      const startPage = batch * batchSize + 1;
+      const endPage = Math.min(startPage + batchSize - 1, totalPages);
+      const pagePromises = [];
+      
+      for (let page = startPage; page <= endPage; page++) {
+        pagePromises.push(fetchPopularTVShows(page));
+      }
+      
+      const results = await Promise.all(pagePromises);
+      results.forEach((pageShows) => {
+        allShows.push(...pageShows);
+      });
+      
+      console.log(`Batch ${batch + 1}/${numBatches} complete: ${allShows.length} shows loaded`);
     }
-
-    const results = await Promise.all(pagePromises);
-    results.forEach((pageShows) => {
-      allShows.push(...pageShows);
-    });
-
-    return allShows;
+    
+    // Remove duplicates by ID
+    const uniqueShows = Array.from(
+      new Map(allShows.map(show => [show.id, show])).values()
+    );
+    
+    console.log(`Fetched ${uniqueShows.length} unique TV shows (filtered, no adult content)`);
+    return uniqueShows;
   } catch (error) {
     console.error("Error fetching all TV shows:", error);
     return [];
@@ -5595,43 +5652,58 @@ export const fetchCategoryContent = async (categoryId, categoryType = 'mixed', p
     
     const actualEndPage = Math.min(endPage, maxPage);
     
-    // Category mapping for different content types
-    const categoryMap = {
-      // Movies
-      'now_playing': { endpoint: 'movie/now_playing', type: 'movie' },
-      'upcoming': { endpoint: 'movie/upcoming', type: 'movie' },
-      'top_rated_movies': { endpoint: 'movie/top_rated', type: 'movie' },
-      'popular_movies': { endpoint: 'movie/popular', type: 'movie' },
-      // TV Shows
-      'airing_today': { endpoint: 'tv/airing_today', type: 'tv' },
-      'on_the_air': { endpoint: 'tv/on_the_air', type: 'tv' },
-      'top_rated_tv': { endpoint: 'tv/top_rated', type: 'tv' },
-      'popular_tv': { endpoint: 'tv/popular', type: 'tv' },
-      // Genres (movies)
-      'action': { endpoint: 'discover/movie', type: 'movie', genreId: 28 },
-      'comedy': { endpoint: 'discover/movie', type: 'movie', genreId: 35 },
-      'horror': { endpoint: 'discover/movie', type: 'movie', genreId: 27 },
-      'romance': { endpoint: 'discover/movie', type: 'movie', genreId: 10749 },
-      'thriller': { endpoint: 'discover/movie', type: 'movie', genreId: 53 },
-      'sci_fi': { endpoint: 'discover/movie', type: 'movie', genreId: 878 },
-      // Genres (TV)
-      'drama': { endpoint: 'discover/tv', type: 'tv', genreId: 18 },
-      'crime': { endpoint: 'discover/tv', type: 'tv', genreId: 80 },
-      'mystery': { endpoint: 'discover/tv', type: 'tv', genreId: 9648 },
-      'animation': { endpoint: 'discover/tv', type: 'tv', genreId: 16 },
-      // Anime
-      'anime': { endpoint: 'discover/tv', type: 'tv', genreId: 16, originCountry: 'JP' },
-    };
+    // Check if it's a genre ID format (e.g., "genre_35")
+    const genreMatch = categoryId.match(/^genre_(\d+)$/);
     
-    const config = categoryMap[categoryId];
-    if (!config) {
-      console.warn(`Unknown category: ${categoryId}`);
-      return { results: [], hasMore: false };
+    let config;
+    if (genreMatch) {
+      // Handle genre ID format
+      const genreId = parseInt(genreMatch[1], 10);
+      const endpoint = categoryType === 'tv' ? 'discover/tv' : 'discover/movie';
+      config = {
+        endpoint,
+        type: categoryType,
+        genreId,
+      };
+    } else {
+      // Category mapping for different content types
+      const categoryMap = {
+        // Movies
+        'now_playing': { endpoint: 'movie/now_playing', type: 'movie' },
+        'upcoming': { endpoint: 'movie/upcoming', type: 'movie' },
+        'top_rated_movies': { endpoint: 'movie/top_rated', type: 'movie' },
+        'popular_movies': { endpoint: 'movie/popular', type: 'movie' },
+        // TV Shows
+        'airing_today': { endpoint: 'tv/airing_today', type: 'tv' },
+        'on_the_air': { endpoint: 'tv/on_the_air', type: 'tv' },
+        'top_rated_tv': { endpoint: 'tv/top_rated', type: 'tv' },
+        'popular_tv': { endpoint: 'tv/popular', type: 'tv' },
+        // Genres (movies)
+        'action': { endpoint: 'discover/movie', type: 'movie', genreId: 28 },
+        'comedy': { endpoint: 'discover/movie', type: 'movie', genreId: 35 },
+        'horror': { endpoint: 'discover/movie', type: 'movie', genreId: 27 },
+        'romance': { endpoint: 'discover/movie', type: 'movie', genreId: 10749 },
+        'thriller': { endpoint: 'discover/movie', type: 'movie', genreId: 53 },
+        'sci_fi': { endpoint: 'discover/movie', type: 'movie', genreId: 878 },
+        // Genres (TV)
+        'drama': { endpoint: 'discover/tv', type: 'tv', genreId: 18 },
+        'crime': { endpoint: 'discover/tv', type: 'tv', genreId: 80 },
+        'mystery': { endpoint: 'discover/tv', type: 'tv', genreId: 9648 },
+        'animation': { endpoint: 'discover/tv', type: 'tv', genreId: 16 },
+        // Anime
+        'anime': { endpoint: 'discover/tv', type: 'tv', genreId: 16, originCountry: 'JP' },
+      };
+      
+      config = categoryMap[categoryId];
+      if (!config) {
+        console.warn(`Unknown category: ${categoryId}`);
+        return { results: [], hasMore: false };
+      }
     }
     
     const pagePromises = [];
     for (let p = startPage; p <= actualEndPage; p++) {
-      let url = `${BASE_URL}/${config.endpoint}?api_key=${API_KEY}&page=${p}&sort_by=popularity.desc`;
+      let url = `${BASE_URL}/${config.endpoint}?api_key=${API_KEY}&page=${p}&sort_by=popularity.desc&include_adult=false`;
       
       if (config.genreId) {
         url += `&with_genres=${config.genreId}`;
@@ -5643,7 +5715,10 @@ export const fetchCategoryContent = async (categoryId, categoryType = 'mixed', p
       pagePromises.push(
         fetch(url)
           .then(res => safeJsonParse(res))
-          .catch(() => ({ results: [] }))
+          .catch((err) => {
+            console.error(`Error fetching page ${p}:`, err);
+            return { results: [] };
+          })
       );
     }
     
@@ -5651,20 +5726,24 @@ export const fetchCategoryContent = async (categoryId, categoryType = 'mixed', p
     
     responses.forEach(data => {
       if (data.results) {
-        const mapped = data.results.map(item => ({
-          id: item.id,
-          title: item.title || item.name,
-          image: getImageUrl(item.poster_path, "w342"),
-          backdrop: getBackdropUrl(item.backdrop_path, "w780"),
-          rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
-          year: item.release_date
-            ? new Date(item.release_date).getFullYear()
-            : item.first_air_date
-              ? new Date(item.first_air_date).getFullYear()
-              : "N/A",
-          type: config.type,
-          overview: item.overview,
-        }));
+        const mapped = data.results
+          .filter(item => !shouldFilterContent(item)) // Apply content filtering
+          .map(item => ({
+            id: item.id,
+            title: item.title || item.name,
+            image: getImageUrl(item.poster_path, "w342"),
+            backdrop: getBackdropUrl(item.backdrop_path, "w780"),
+            rating: item.vote_average ? item.vote_average.toFixed(1) : "N/A",
+            year: item.release_date
+              ? new Date(item.release_date).getFullYear()
+              : item.first_air_date
+                ? new Date(item.first_air_date).getFullYear()
+                : "N/A",
+            type: config.type,
+            overview: item.overview,
+            poster_path: item.poster_path,
+            backdrop_path: item.backdrop_path,
+          }));
         results.push(...mapped);
       }
     });
@@ -5673,6 +5752,8 @@ export const fetchCategoryContent = async (categoryId, categoryType = 'mixed', p
     const uniqueResults = Array.from(
       new Map(results.map(item => [item.id, item])).values()
     );
+    
+    console.log(`✅ Fetched ${uniqueResults.length} items for ${categoryId} (${categoryType})`);
     
     return {
       results: uniqueResults,

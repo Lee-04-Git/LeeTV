@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { View, Image, StyleSheet } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import * as NavigationBar from "expo-navigation-bar";
 import AppNavigator from "./src/navigation/AppNavigator";
 import { MyListProvider } from "./src/context/MyListContext";
 
@@ -27,13 +28,28 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    // Set navigation bar to be visible but with transparent background
+    const setupNavigationBar = async () => {
+      try {
+        await NavigationBar.setVisibilityAsync("visible");
+        await NavigationBar.setBackgroundColorAsync("#010e1f");
+        await NavigationBar.setButtonStyleAsync("light");
+      } catch (error) {
+        console.log("Navigation bar setup not supported");
+      }
+    };
+
+    setupNavigationBar();
+  }, []);
+
   if (!appIsReady) {
     return <CustomSplash />;
   }
 
   return (
     <MyListProvider>
-      <StatusBar style="light" />
+      <StatusBar style="light" hidden={false} />
       <AppNavigator />
     </MyListProvider>
   );

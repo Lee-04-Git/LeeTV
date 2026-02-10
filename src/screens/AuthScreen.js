@@ -71,24 +71,51 @@ const AuthScreen = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
 
   const handleAuth = async () => {
-    // Skip authentication - allow anyone to sign in
-    setLoading(true);
-    
-    try {
-      // Create a mock user with the provided info or defaults
-      const userName = fullName.trim() || email || "Guest User";
-      
-      // Save to Supabase user profile with mock data
-      await saveUserProfile({
-        name: userName,
-        avatarSeed: Math.random().toString(36).substring(7),
-        avatarColorIndex: Math.floor(Math.random() * 6),
-      });
+    if (!email || !password) {
+      Alert.alert("Error", "Please enter both email and password.");
+      return;
+    }
 
-      // Navigate directly to UserProfile
-      navigation.replace("UserProfile");
+    if (isSignUp && !fullName.trim()) {
+      Alert.alert("Error", "Please enter your full name.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      if (isSignUp) {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+
+        // Update Firebase profile with display name
+        await updateProfile(userCredential.user, {
+          displayName: fullName.trim(),
+        });
+
+        // Save to Supabase user profile
+        await saveUserProfile({
+          name: fullName.trim(),
+          avatarSeed: Math.random().toString(36).substring(7),
+          avatarColorIndex: Math.floor(Math.random() * 6),
+        });
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
+      }
     } catch (error) {
-      Alert.alert("Error", "Something went wrong. Please try again.");
+      let errorMessage = "An error occurred.";
+      if (error.code === "auth/invalid-email")
+        errorMessage = "Invalid email address.";
+      if (error.code === "auth/user-disabled")
+        errorMessage = "User account disabled.";
+      if (error.code === "auth/user-not-found")
+        errorMessage = "User not found.";
+      if (error.code === "auth/wrong-password")
+        errorMessage = "Incorrect password.";
+      if (error.code === "auth/email-already-in-use")
+        errorMessage = "Email already in use.";
+      if (error.code === "auth/weak-password")
+        errorMessage = "Password is too weak.";
+
+      Alert.alert("Authentication Error", errorMessage);
       console.error(error);
     } finally {
       setLoading(false);
@@ -144,29 +171,31 @@ const AuthScreen = ({ navigation }) => {
         <View style={styles.spacer} />
 
         {/* Login Title */}
-        <Text style={styles.title}>Welcome to LeeTV+</Text>
+        <Text style={styles.title}>{isSignUp ? "Sign Up" : "Login"}</Text>
 
         {/* Form */}
         <View style={styles.formContainer}>
-          {/* Full Name Input */}
-          <View style={styles.inputContainer}>
-            <Ionicons name="person-outline" size={20} color="#888" style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Name (optional)"
-              placeholderTextColor="#888"
-              value={fullName}
-              onChangeText={setFullName}
-              autoCapitalize="words"
-            />
-          </View>
+          {/* Full Name Input - Only for Sign Up */}
+          {isSignUp && (
+            <View style={styles.inputContainer}>
+              <Ionicons name="person-outline" size={20} color="#888" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Full Name"
+                placeholderTextColor="#888"
+                value={fullName}
+                onChangeText={setFullName}
+                autoCapitalize="words"
+              />
+            </View>
+          )}
 
           {/* Email Input */}
           <View style={styles.inputContainer}>
             <Ionicons name="mail-outline" size={20} color="#888" style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="Email (optional)"
+              placeholder="Email"
               placeholderTextColor="#888"
               value={email}
               onChangeText={setEmail}
@@ -175,7 +204,35 @@ const AuthScreen = ({ navigation }) => {
             />
           </View>
 
-          {/* Continue Button */}
+          {/* Password Input */}
+          <View style={styles.inputContainer}>
+            <Ionicons name="lock-closed-outline" size={20} color="#888" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#888"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+              <Ionicons
+                name={showPassword ? "eye-outline" : "eye-off-outline"}
+                size={20}
+                color="#888"
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Forgot Password */}
+          {!isSignUp && (
+            <TouchableOpacity style={styles.forgotPassword}>
+              <Text style={styles.forgotPasswordText}>Forgot password?</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Login Button */}
           <TouchableOpacity
             style={styles.loginButton}
             onPress={handleAuth}
@@ -184,15 +241,22 @@ const AuthScreen = ({ navigation }) => {
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.loginButtonText}>CONTINUE</Text>
+              <Text style={styles.loginButtonText}>
+                {isSignUp ? "SIGN UP" : "LOGIN"}
+              </Text>
             )}
           </TouchableOpacity>
 
-          {/* Info Text */}
+          {/* Sign Up Link */}
           <View style={styles.signUpContainer}>
             <Text style={styles.signUpText}>
-              No account needed - just tap continue to start watching
+              {isSignUp ? "Already have an account? " : "New to LeeTV+? "}
             </Text>
+            <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)}>
+              <Text style={styles.signUpLink}>
+                {isSignUp ? "Sign in" : "Sign up"}
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>

@@ -1,341 +1,123 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import {
-  View,
-  StyleSheet,
-  TouchableOpacity,
-  Text,
-  StatusBar,
-  Platform,
-  BackHandler,
-} from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+﻿import { useState, useEffect, useRef } from "react";
+import { View, StyleSheet, StatusBar, Platform, BackHandler, Text, AppState } from "react-native";
 import * as ScreenOrientation from "expo-screen-orientation";
 import * as NavigationBar from "expo-navigation-bar";
-import { FullscreenIcon } from "../components/Icons";
-import { saveLastWatched, saveWatchProgress, getWatchProgress } from "../services/supabaseService";
+import { saveVidrockProgress, getVidrockContinueWatching, getRawVidrockProgress } from "../services/vidrockService";
 
 let WebView = null;
-if (Platform.OS !== "web") {
-  WebView = require("react-native-webview").WebView;
-}
+if (Platform.OS !== "web") WebView = require("react-native-webview").WebView;
 
 const VideoPlayerScreen = ({ navigation, route }) => {
   const params = route.params || {};
-  const title = params.title || "";
   const mediaId = params.mediaId || params.id;
   const mediaType = params.mediaType || params.type || "movie";
-  const season = params.season || 1;
-  const episode = params.episode || 1;
-  const posterPath = params.poster_path || params.posterPath;
-  const backdropPath = params.backdrop_path || params.backdropPath;
-  const episodeTitle = params.episodeTitle;
-
+  const mediaTitle = params.title || "Unknown";
+  let season = 1, episode = 1;
+  if (mediaType === "tv") {
+    const s = parseInt(params.season, 10), e = parseInt(params.episode, 10);
+    if (!isNaN(s) && s > 0) season = s;
+    if (!isNaN(e) && e > 0) episode = e;
+  }
   const [videoUrl, setVideoUrl] = useState("");
-  const [initialTime, setInitialTime] = useState(0);
   const [isReady, setIsReady] = useState(false);
-
-  const webViewRef = useRef(null);
-  const progressIntervalRef = useRef(null);
-  const currentTimeRef = useRef(0);
-  const durationRef = useRef(0);
-
-  const getStorageKey = useCallback(() => {
-    return mediaType === "tv"
-      ? `vidrock_${mediaId}_S${season}E${episode}`
-      : `vidrock_${mediaId}`;
-  }, [mediaId, mediaType, season, episode]);
-
-  const loadProgress = async () => {
-    let savedTime = 0;
+  const [progressData, setProgressData] = useState([]);
+  const lastPositionRef = useRef({ currentTime: 0, duration: 0 });
+  const appState = useRef(AppState.currentState);
+  const saveCurrentPosition = async () => {
     try {
-      const supabaseProgress = await getWatchProgress(mediaId, mediaType, season, episode);
-      if (supabaseProgress?.progress_seconds > 10) {
-        savedTime = supabaseProgress.progress_seconds;
-        if (supabaseProgress.duration_seconds > 0) {
-          const pct = (savedTime / supabaseProgress.duration_seconds) * 100;
-          if (pct > 95) savedTime = 0;
+      const { currentTime, duration } = lastPositionRef.current;
+      if (currentTime === 0 || duration === 0) return;
+      const existingData = await getRawVidrockProgress();
+      const updatedData = existingData.map(item => {
+        if (item.id === mediaId && item.type === mediaType) {
+          const updated = { ...item, last_updated: Date.now() };
+          if (mediaType === "tv") {
+            updated.last_season_watched = String(season);
+            updated.last_episode_watched = String(episode);
+            if (!updated.show_progress) updated.show_progress = {};
+            updated.show_progress["s" + season + "e" + episode] = { season: String(season), episode: String(episode), progress: { watched: currentTime, duration }, last_updated: Date.now() };
+          } else updated.progress = { watched: currentTime, duration };
+          return updated;
         }
-      }
-      if (savedTime === 0) {
-        const local = await AsyncStorage.getItem(getStorageKey());
-        if (local) {
-          const parsed = JSON.parse(local);
-          if (parsed.currentTime > 10) savedTime = parsed.currentTime;
-        }
-      }
-    } catch (e) {
-      console.log("Load progress error:", e);
-    }
-    return savedTime;
-  };
-
-  const saveProgress = async (seconds, duration) => {
-    if (!seconds || seconds < 10) return;
-    if (duration > 0 && (seconds / duration) > 0.98) return;
-
-    try {
-      await AsyncStorage.setItem(getStorageKey(), JSON.stringify({
-        currentTime: Math.floor(seconds),
-        timestamp: Date.now(),
-      }));
-      await saveWatchProgress({
-        media_id: mediaId,
-        media_type: mediaType,
-        title,
-        poster_path: params.poster_path || null,
-        backdrop_path: params.backdrop_path || null,
-        season_number: mediaType === "tv" ? season : null,
-        episode_number: mediaType === "tv" ? episode : null,
-        episode_title: params.episodeTitle || null,
-        progress_seconds: Math.floor(seconds),
-        duration_seconds: Math.floor(duration) || (mediaType === "tv" ? 2400 : 7200),
+        return item;
       });
-    } catch (e) { }
+      const exists = updatedData.some(item => item.id === mediaId && item.type === mediaType);
+      if (!exists) {
+        const newItem = { id: mediaId, type: mediaType, title: mediaTitle, poster_path: params.poster_path || null, backdrop_path: params.backdrop_path || null, last_updated: Date.now() };
+        if (mediaType === "tv") {
+          newItem.last_season_watched = String(season);
+          newItem.last_episode_watched = String(episode);
+          newItem.show_progress = {};
+          newItem.show_progress["s" + season + "e" + episode] = { season: String(season), episode: String(episode), progress: { watched: currentTime, duration }, last_updated: Date.now() };
+        } else newItem.progress = { watched: currentTime, duration };
+        updatedData.push(newItem);
+      }
+      await saveVidrockProgress(updatedData);
+    } catch (error) {}
   };
-
-  const saveToWatchHistory = async () => {
+  const handleVidrockMessage = async (event) => {
     try {
-      await saveLastWatched({
-        media_id: mediaId,
-        media_type: mediaType,
-        title: title,
-        poster_path: posterPath,
-        backdrop_path: backdropPath,
-        season_number: mediaType === "tv" ? season : null,
-        episode_number: mediaType === "tv" ? episode : null,
-        episode_title: mediaType === "tv" ? episodeTitle : null,
-      });
-      console.log("Saved to watch history:", title);
-    } catch (error) {
-      console.error("Error saving to watch history:", error);
-    }
+      const message = JSON.parse(event.nativeEvent.data);
+      if (message.type === "MEDIA_DATA") {
+        const mediaDataArray = message.data;
+        if (!Array.isArray(mediaDataArray)) return;
+        const validItems = mediaDataArray.filter(item => item.id && item.type && item.title);
+        if (validItems.length === 0) return;
+        const existingData = await getRawVidrockProgress();
+        const existingMap = new Map();
+        existingData.forEach(item => existingMap.set(item.type + "-" + item.id, item));
+        validItems.forEach(item => {
+          const key = item.type + "-" + item.id;
+          const existing = existingMap.get(key);
+          if (!existing || (item.last_updated || 0) >= (existing.last_updated || 0)) {
+            existingMap.set(key, item);
+            if (item.id === mediaId && item.type === mediaType) {
+              if (mediaType === "tv" && item.show_progress) {
+                const episodeProgress = item.show_progress["s" + season + "e" + episode];
+                if (episodeProgress?.progress) lastPositionRef.current = { currentTime: episodeProgress.progress.watched, duration: episodeProgress.progress.duration };
+              } else if (mediaType === "movie" && item.progress) lastPositionRef.current = { currentTime: item.progress.watched, duration: item.progress.duration };
+            }
+          }
+        });
+        await saveVidrockProgress(Array.from(existingMap.values()));
+      }
+      if (message.type === "PLAYER_EVENT") {
+        const { event: eventType, currentTime, duration } = message.data;
+        if (currentTime !== undefined && duration !== undefined) lastPositionRef.current = { currentTime, duration };
+        if (eventType === "pause" || eventType === "ended") await saveCurrentPosition();
+      }
+    } catch (error) {}
   };
-
   useEffect(() => {
     const init = async () => {
-      // Save to watch history
-      saveToWatchHistory();
-
-      const savedTime = await loadProgress();
-      setInitialTime(savedTime);
-      currentTimeRef.current = savedTime;
-
-      let url = mediaType === "tv"
-        ? `https://vidrock.net/tv/${mediaId}/${season}/${episode}`
-        : `https://vidrock.net/movie/${mediaId}`;
-
+      const existingProgress = await getVidrockContinueWatching();
+      setProgressData(existingProgress);
+      let url = mediaType === "tv" ? "https://vidrock.net/tv/" + mediaId + "/" + season + "/" + episode : "https://vidrock.net/movie/" + mediaId;
       const q = ["autoplay=1", "download=false", "muted=0"];
       if (mediaType === "tv") q.push("autonext=1");
-      if (savedTime > 10) q.push(`t=${Math.floor(savedTime)}`);
-
       setVideoUrl(url + "?" + q.join("&"));
       setIsReady(true);
     };
     init();
-
     if (Platform.OS !== "web") ScreenOrientation.unlockAsync();
-    if (Platform.OS === "android") {
-      try {
-        NavigationBar.setVisibilityAsync("hidden");
-      } catch (e) {
-        console.log("NavigationBar not available");
-      }
-    }
-
-    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
-      saveProgress(currentTimeRef.current, durationRef.current);
-      navigation.goBack();
-      return true;
+    if (Platform.OS === "android") { try { NavigationBar.setVisibilityAsync("hidden"); } catch (e) {} }
+    const appStateSubscription = AppState.addEventListener("change", nextAppState => {
+      if (appState.current.match(/active/) && nextAppState.match(/inactive|background/)) saveCurrentPosition();
+      appState.current = nextAppState;
     });
-
-    progressIntervalRef.current = setInterval(() => {
-      saveProgress(currentTimeRef.current, durationRef.current);
-    }, 10000);
-
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => { saveCurrentPosition(); navigation.goBack(); return true; });
     return () => {
       backHandler.remove();
-      clearInterval(progressIntervalRef.current);
-      saveProgress(currentTimeRef.current, durationRef.current);
-      if (Platform.OS !== "web") {
-        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-      }
-      if (Platform.OS === "android") {
-        NavigationBar.setVisibilityAsync("visible");
-      }
+      appStateSubscription.remove();
+      saveCurrentPosition();
+      if (Platform.OS !== "web") ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      if (Platform.OS === "android") NavigationBar.setVisibilityAsync("visible");
     };
   }, [mediaId, season, episode]);
-
-  const toggleOrientation = async () => {
-    if (Platform.OS === "web") return;
-    const o = await ScreenOrientation.getOrientationAsync();
-    if (o <= 2) {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
-    } else {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-    }
-  };
-
-  const handleMessage = (e) => {
-    try {
-      const data = JSON.parse(e.nativeEvent.data);
-      if (data.type === "progress") {
-        if (data.currentTime > 0) currentTimeRef.current = data.currentTime;
-        if (data.duration > 0) durationRef.current = data.duration;
-      }
-    } catch (err) { }
-  };
-
-  const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-  <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    html,body{width:100%;height:100%;background:#000;overflow:hidden}
-    iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:none}
-  </style>
-</head>
-<body>
-  <iframe src="${videoUrl}" id="player" allowfullscreen allow="autoplay;fullscreen;encrypted-media"></iframe>
-  <script>
-    const resumeTime = ${initialTime};
-    let resumed = false;
-    let video = null;
-
-    function findVideo(doc) {
-      if (!doc) return null;
-      try {
-        let v = doc.querySelector('video');
-        if (v) return v;
-        const frames = doc.querySelectorAll('iframe');
-        for (let f of frames) {
-          try {
-            v = findVideo(f.contentDocument || f.contentWindow.document);
-            if (v) return v;
-          } catch(e) {}
-        }
-      } catch(e) {}
-      return null;
-    }
-
-    setInterval(() => {
-      if (!video) {
-        video = findVideo(document);
-        const frame = document.getElementById('player');
-        if (!video && frame) {
-          try { video = findVideo(frame.contentDocument || frame.contentWindow.document); } catch(e) {}
-        }
-      }
-      
-      if (video) {
-        if (!resumed && resumeTime > 10 && video.readyState >= 2) {
-          video.currentTime = resumeTime;
-          resumed = true;
-          video.play().catch(() => {});
-        }
-        if (video.currentTime > 0) {
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'progress',
-            currentTime: Math.floor(video.currentTime),
-            duration: Math.floor(video.duration || 0)
-          }));
-        }
-      }
-    }, 1500);
-
-    window.open = () => null;
-  </script>
-</body>
-</html>`;
-
-  if (!isReady || !videoUrl) {
-    return (
-      <View style={styles.container}>
-        <StatusBar hidden />
-        <View style={styles.loading}>
-          <Text style={styles.loadingText}>Loading...</Text>
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      <StatusBar hidden />
-
-      <WebView
-        ref={webViewRef}
-        source={{ html: htmlContent, baseUrl: "https://vidrock.net" }}
-        style={styles.video}
-        allowsFullscreenVideo
-        allowsInlineMediaPlayback
-        mediaPlaybackRequiresUserAction={false}
-        javaScriptEnabled
-        domStorageEnabled
-        sharedCookiesEnabled
-        thirdPartyCookiesEnabled
-        cacheEnabled
-        incognito={false}
-        mixedContentMode="always"
-        originWhitelist={["*"]}
-        onMessage={handleMessage}
-      />
-
-      <View style={styles.topControls} pointerEvents="box-none">
-        <TouchableOpacity
-          onPress={() => {
-            saveProgress(currentTimeRef.current, durationRef.current);
-            navigation.goBack();
-          }}
-          style={styles.btn}
-        >
-          <Text style={styles.btnText}>←</Text>
-        </TouchableOpacity>
-
-        <View style={styles.titleBox}>
-          <Text style={styles.title} numberOfLines={1}>{title}</Text>
-          {mediaType === "tv" && (
-            <Text style={styles.episode}>S{season} E{episode}</Text>
-          )}
-        </View>
-
-        <TouchableOpacity onPress={toggleOrientation} style={styles.btn}>
-          <FullscreenIcon size={20} color="#fff" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+  const progressDataJson = JSON.stringify(progressData.map(item => ({ id: item.id, type: item.type, title: item.title, poster_path: item.poster_path, backdrop_path: item.backdrop_path, progress: item.progress || { watched: 0, duration: 0 }, last_updated: item.last_updated, number_of_episodes: item.number_of_episodes, number_of_seasons: item.number_of_seasons, last_season_watched: item.last_season_watched, last_episode_watched: item.last_episode_watched, show_progress: item.show_progress || {} })));
+  const htmlContent = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no'><style>*{margin:0;padding:0;box-sizing:border-box}html,body{width:100%;height:100%;background:#000;overflow:hidden}iframe{position:absolute;top:0;left:0;width:100%;height:100%;border:none}</style></head><body><iframe src='" + videoUrl + "' allowfullscreen allow='autoplay;fullscreen;encrypted-media'></iframe><script>window.open=()=>null;try{const d=" + progressDataJson + ";let e=[];try{const s=localStorage.getItem('vidRockProgress');if(s){e=JSON.parse(s);if(!Array.isArray(e))e=[]}}catch(x){e=[]}const m=new Map();e.forEach(i=>m.set(i.type+'-'+i.id,i));d.forEach(i=>{const k=i.type+'-'+i.id;const x=m.get(k);if(!x||(i.last_updated||0)>=(x.last_updated||0))m.set(k,i)});localStorage.setItem('vidRockProgress',JSON.stringify(Array.from(m.values())))}catch(x){}window.addEventListener('message',e=>{if(!e.data||typeof e.data!=='object')return;if(e.data?.type==='MEDIA_DATA'){const d=e.data.data;try{let x=[];try{const s=localStorage.getItem('vidRockProgress');if(s){x=JSON.parse(s);if(!Array.isArray(x))x=[]}}catch(y){x=[]}const m=new Map();x.forEach(i=>m.set(i.type+'-'+i.id,i));if(Array.isArray(d))d.forEach(i=>{const k=i.type+'-'+i.id;const y=m.get(k);if(!y||(i.last_updated||0)>=(y.last_updated||0))m.set(k,i)});localStorage.setItem('vidRockProgress',JSON.stringify(Array.from(m.values())))}catch(y){if(Array.isArray(d))localStorage.setItem('vidRockProgress',JSON.stringify(d))}if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({type:'MEDIA_DATA',data:d}))}if(e.data?.type==='PLAYER_EVENT'&&window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify({type:'PLAYER_EVENT',data:e.data.data}))});</script></body></html>";
+  if (!isReady || !videoUrl) return (<View style={styles.container}><StatusBar hidden /><View style={styles.loading}><Text style={styles.loadingText}>Loading...</Text></View></View>);
+  return (<View style={styles.container}><StatusBar hidden /><WebView source={{ html: htmlContent, baseUrl: "https://vidrock.net" }} style={styles.video} allowsFullscreenVideo allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} javaScriptEnabled domStorageEnabled sharedCookiesEnabled thirdPartyCookiesEnabled cacheEnabled incognito={false} mixedContentMode="always" originWhitelist={["*"]} onMessage={handleVidrockMessage} /></View>);
 };
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
-  video: { flex: 1, backgroundColor: "#000" },
-  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
-  loadingText: { color: "#fff", fontSize: 16 },
-  topControls: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    paddingTop: Platform.OS === "ios" ? 50 : 30,
-    backgroundColor: "rgba(0,0,0,0.4)",
-  },
-  btn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.25)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  btnText: { color: "#fff", fontSize: 20, fontWeight: "bold" },
-  titleBox: { flex: 1, marginHorizontal: 12 },
-  title: { color: "#fff", fontSize: 15, fontWeight: "600" },
-  episode: { color: "rgba(255,255,255,0.7)", fontSize: 12, marginTop: 2 },
-});
-
+const styles = StyleSheet.create({ container: { flex: 1, backgroundColor: "#000" }, video: { flex: 1, backgroundColor: "#000" }, loading: { flex: 1, justifyContent: "center", alignItems: "center" }, loadingText: { color: "#fff", fontSize: 16 } });
 export default VideoPlayerScreen;
