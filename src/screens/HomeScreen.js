@@ -1768,7 +1768,7 @@ const styles = StyleSheet.create({
   seeAllBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
   seeAllText: { color: "#37d1e4", fontSize: 13, fontWeight: "600" },
   showList: { paddingHorizontal: 16, gap: 8 },
-  showCard: { width: 110, height: 160, borderRadius: 4, overflow: "hidden", backgroundColor: "#0a1929" },
+  showCard: { width: 140, height: 210, borderRadius: 4, overflow: "hidden", backgroundColor: "#0a1929" },
   showImage: { width: "100%", height: "100%" },
   tabHeader: { paddingHorizontal: 16, paddingTop: 100, paddingBottom: 16 },
   tabHeaderSpacer: { paddingTop: 80 },
@@ -1789,7 +1789,7 @@ const styles = StyleSheet.create({
   navLabel: { color: "#888", fontSize: 10, marginTop: 4 },
   navLabelActive: { color: "#fff" },
   myListContainer: { flex: 1, paddingTop: 80 },
-  myListCard: { width: 110, height: 160, borderRadius: 4, overflow: "hidden", backgroundColor: "#0a1929" },
+  myListCard: { width: 140, height: 210, borderRadius: 4, overflow: "hidden", backgroundColor: "#0a1929" },
   myListImage: { width: "100%", height: "100%" },
   emptyList: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 40 },
   emptyListText: { color: "#fff", fontSize: 18, fontWeight: "600", marginTop: 16 },
@@ -1855,7 +1855,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     includeFontPadding: false,
   },
-  top10Image: { width: 110, height: 160, borderRadius: 6, backgroundColor: "#0a1929" },
+  top10Image: { width: 140, height: 210, borderRadius: 6, backgroundColor: "#0a1929" },
 
   // Featured Section styles - Premium spotlight cards with transparent blending sides
   featuredContainer: { marginBottom: 24 },

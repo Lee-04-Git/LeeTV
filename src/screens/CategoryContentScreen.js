@@ -16,7 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { fetchCategoryContent } from "../services/tmdbApi";
 
 const { width } = Dimensions.get("window");
-const ITEM_WIDTH = (width - 48) / 3;
+const ITEM_WIDTH = (width - 42) / 3; // Slightly larger cards
 const ITEM_HEIGHT = ITEM_WIDTH * 1.5;
 
 const MovieItem = memo(({ item, onPress }) => {
@@ -35,11 +35,6 @@ const MovieItem = memo(({ item, onPress }) => {
     <Animated.View style={{ opacity: fadeAnim }}>
       <TouchableOpacity style={styles.itemCard} onPress={() => onPress(item)} activeOpacity={0.8}>
         <Image source={{ uri: item.image }} style={styles.itemImage} resizeMode="cover" />
-        <View style={styles.itemOverlay}>
-          <Text style={styles.itemRating}>
-            <Ionicons name="star" size={10} color="#FFD700" /> {item.rating}
-          </Text>
-        </View>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -111,9 +106,9 @@ const CategoryContentScreen = ({ route, navigation }) => {
     try {
       // If genreIds are provided, fetch both movies and TV shows for that genre
       if (genreIds) {
-        // Fetch 300 titles total (150 movies + 150 TV shows)
-        const moviePages = 8; // 8 pages × 20 = 160 movies (we'll slice to 150)
-        const tvPages = 8; // 8 pages × 20 = 160 TV shows (we'll slice to 150)
+        // Fetch up to 200 titles total (100 movies + 100 TV shows)
+        const moviePages = 5; // 5 pages × 20 = 100 movies
+        const tvPages = 5; // 5 pages × 20 = 100 TV shows
         
         const moviePromises = [];
         const tvPromises = [];
@@ -137,9 +132,9 @@ const CategoryContentScreen = ({ route, navigation }) => {
           Promise.all(tvPromises),
         ]);
         
-        // Combine and limit to 150 each
-        const movies = movieResults.flatMap(result => result.results).slice(0, 150);
-        const tvShows = tvResults.flatMap(result => result.results).slice(0, 150);
+        // Combine and limit to 100 each
+        const movies = movieResults.flatMap(result => result.results).slice(0, 100);
+        const tvShows = tvResults.flatMap(result => result.results).slice(0, 100);
         
         console.log(`✅ Loaded ${movies.length} movies and ${tvShows.length} TV shows for ${title} (Total: ${movies.length + tvShows.length})`);
         
@@ -149,9 +144,21 @@ const CategoryContentScreen = ({ route, navigation }) => {
         setContent([...movies, ...tvShows]);
         setHasMore(false);
       } else {
-        const data = await fetchCategoryContent(categoryId, categoryType, 1, 25);
-        setContent(data.results);
-        setHasMore(data.hasMore);
+        // For non-genre categories, fetch up to 200 items
+        const pages = 10; // 10 pages × 20 = 200 items
+        const promises = [];
+        
+        for (let i = 1; i <= pages; i++) {
+          promises.push(fetchCategoryContent(categoryId, categoryType, i, 20));
+        }
+        
+        const results = await Promise.all(promises);
+        const allItems = results.flatMap(result => result.results).slice(0, 200);
+        
+        console.log(`✅ Loaded ${allItems.length} items for ${title}`);
+        
+        setContent(allItems);
+        setHasMore(false);
       }
       setPage(1);
     } catch (error) {
@@ -209,7 +216,7 @@ const CategoryContentScreen = ({ route, navigation }) => {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#37d1e4" />
           <Text style={styles.loadingText}>
-            {genreIds ? "Loading 300 titles..." : "Loading content..."}
+            {genreIds ? "Loading up to 200 titles..." : "Loading content..."}
           </Text>
         </View>
       ) : filterLoading ? (
@@ -315,15 +322,6 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: "#0a1929", // Fallback color while loading
   },
-  itemOverlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 6,
-    backgroundColor: "rgba(0,0,0,0.6)",
-  },
-  itemRating: { color: "#fff", fontSize: 11, fontWeight: "600" },
   
   // Skeleton styles - Only card image, no rating
   skeletonImage: {

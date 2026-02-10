@@ -1101,8 +1101,8 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   relatedImage: {
-    width: 110,
-    height: 150,
+    width: 140,
+    height: 210,
     borderRadius: 6,
   },
   relatedOverlay: {

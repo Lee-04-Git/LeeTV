@@ -519,8 +519,8 @@ const styles = StyleSheet.create({
     borderBottomColor: "#0a1929",
   },
   dropdownPoster: {
-    width: 50,
-    height: 75,
+    width: 70,
+    height: 105,
     borderRadius: 4,
     backgroundColor: "#0a1929",
   },
@@ -573,8 +573,8 @@ const styles = StyleSheet.create({
     borderBottomColor: "#1a2332",
   },
   recentPoster: {
-    width: 50,
-    height: 75,
+    width: 70,
+    height: 105,
     borderRadius: 4,
     backgroundColor: "#0a1929",
   },
